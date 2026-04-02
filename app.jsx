@@ -3868,7 +3868,9 @@ function ReportsTab(props) {
   var rejected=fc.filter(function(c){return c.status==="Rejected";});
   var totalValue=fc.reduce(function(s,c){return s+Number(c.valueUSD||0);},0);
   var completedValue=completed.reduce(function(s,c){return s+Number(c.tradingAmount||c.valueUSD||0);},0);
-  var totalFees=fc.reduce(function(s,c){return s+Number(c.fees||0);},0);
+  var totalFeesCollected=completed.reduce(function(s,c){return s+Number(c.fees||0);},0);
+  var totalFeesPending=fc.filter(function(c){return c.status!=="Completed";}).reduce(function(s,c){return s+Number(c.fees||0);},0);
+  var totalFeesDisplay=fmt(totalFeesCollected)+" ("+fmt(totalFeesPending)+" pending)";
   var totalInstruments=fc.reduce(function(s,c){return s+Number(c.instruments||0);},0);
   var avgValue=total>0?totalValue/total:0;
   var completionRate=total>0?Math.round(completed.length/total*100):0;
@@ -4131,7 +4133,7 @@ function ReportsTab(props) {
           {label:"Total cases",      val:total,              sub:"all time",            color:"#6366F1"},
           {label:"Total value",      val:fmt(totalValue),    sub:"USD requested",       color:"#0EA5E9"},
           {label:"Value transferred",val:fmt(completedValue),sub:"USD completed",       color:"#22C55E"},
-          {label:"Fees collected",   val:fmt(totalFees),     sub:"$100 per instrument", color:"#F59E0B"},
+          {label:"Fees collected",   val:totalFeesDisplay,   sub:"$100 per instrument", color:"#F59E0B"},
           {label:"Completion rate",  val:completionRate+"%", sub:completed.length+" completed", color:"#10B981"},
           {label:"Instruments",      val:totalInstruments,   sub:"total requested",     color:"#8B5CF6"},
         ].map(function(k,i){
