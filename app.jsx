@@ -16,6 +16,18 @@ var STAGE_NOTIFY_ROLE = {
   "Rejected":                   null,
 };
 
+function openMailtoDraft(to, subject, body) {
+  try {
+    var mailto = "mailto:" + encodeURIComponent(to || "") +
+      "?subject=" + encodeURIComponent(subject || "") +
+      "&body=" + encodeURIComponent(body || "");
+    window.location.href = mailto;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Notify via Gmail API — styled HTML notification email
 async function draftNotificationEmail(nextStatus, caseData, permissions, actorName) {
   try {
@@ -1086,7 +1098,7 @@ function MOBrokerPanel(props) {
   }
 
   var [emailTo,setEmailTo]=useState(c.brokerEmail||"");
-  var [emailSubject,setEmailSubject]=useState("[ACAT Out] Securities Transfer Request — "+c.clientName+" ("+c.id+")");
+  var [emailSubject,setEmailSubject]=useState("[Transfers Hub] Securities Transfer Request — "+c.clientName+" ("+c.id+")");
   var [emailBody,setEmailBody]=useState("");
 
   // Initialise body when compose opens
@@ -1118,6 +1130,7 @@ function MOBrokerPanel(props) {
           mcp_servers:[{type:"url",url:"https://gmail.mcp.claude.com/mcp",name:"gmail-mcp"}]
         })
       });
+      if(!response.ok) throw new Error("Draft API failed");
       var data=await response.json();
       var txt=(data.content||[]).map(function(b){return b.text||"";}).join("");
       if(txt.includes("DRAFT_CREATED")){
@@ -1133,10 +1146,23 @@ function MOBrokerPanel(props) {
         // Close compose after 1.5s so MO sees the Mark as sent button
         setTimeout(function(){setShowCompose(false);setDraftStatus(null);},1500);
       } else {
-        setDraftStatus("failed");
+        throw new Error("Draft response did not confirm creation");
       }
     } catch(e){
-      setDraftStatus("failed");
+      var opened=openMailtoDraft(emailTo,emailSubject,emailBody);
+      if(opened){
+        setDraftStatus("fallback");
+        var fallbackNote={role:"Middle Office",byName:(user&&user.name)||"MO",
+          text:"📨 Email composer opened via local mail client (mailto) — to: "+emailTo+" | Subject: "+emailSubject,
+          date:new Date().toISOString().slice(0,10)};
+        setCases(function(prev){return patchCase(prev,c.id,{
+          brokerDraftedAt:new Date().toISOString(),
+          brokerEmailTo:emailTo,
+          notes:(c.notes||[]).concat([fallbackNote])
+        });});
+      } else {
+        setDraftStatus("failed");
+      }
     }
   }
 
@@ -1289,14 +1315,15 @@ function MOBrokerPanel(props) {
             {draftStatus&&(
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 <div style={{padding:"9px 12px",borderRadius:8,fontSize:12,fontWeight:600,
-                  background:draftStatus==="sending"?"#EFF6FF":draftStatus==="sent"?"#F0FDF4":"#FEF2F2",
-                  border:"1px solid "+(draftStatus==="sending"?"#BFDBFE":draftStatus==="sent"?"#86EFAC":"#FCA5A5"),
-                  color:draftStatus==="sending"?"#1E40AF":draftStatus==="sent"?"#166534":"#991B1B"}}>
+                  background:draftStatus==="sending"?"#EFF6FF":draftStatus==="sent"?"#F0FDF4":draftStatus==="fallback"?"#FFFBEB":"#FEF2F2",
+                  border:"1px solid "+(draftStatus==="sending"?"#BFDBFE":draftStatus==="sent"?"#86EFAC":draftStatus==="fallback"?"#FDE68A":"#FCA5A5"),
+                  color:draftStatus==="sending"?"#1E40AF":draftStatus==="sent"?"#166534":draftStatus==="fallback"?"#92400E":"#991B1B"}}>
                   {draftStatus==="sending"&&"⏳ Creating Gmail draft…"}
                   {draftStatus==="sent"&&"✓ Draft saved in Gmail. Open Gmail, review, and send — then click \"Mark as sent\" to update the tracker."}
+                  {draftStatus==="fallback"&&"⚠ Gmail draft service unavailable. Opened your local email app with prefilled content — send it, then click Mark as sent."}
                   {draftStatus==="failed"&&"✗ Could not create draft — check Gmail connection and try again."}
                 </div>
-                {draftStatus==="sent"&&(
+                {(draftStatus==="sent"||draftStatus==="fallback")&&(
                   <button onClick={function(){markEmailSent();setShowCompose(false);setDraftStatus(null);}}
                     style={{background:"#0D9488",color:"#fff",border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",width:"100%"}}>
                     ✓ I've sent it — mark as sent &amp; update tracker
@@ -1309,11 +1336,11 @@ function MOBrokerPanel(props) {
               <button onClick={sendDraft}
                 disabled={!emailTo.trim()||draftStatus==="sending"}
                 style={{flex:1,background:emailTo.trim()&&draftStatus!=="sending"?"#1E40AF":"#D1D5DB",color:"#fff",border:"none",borderRadius:8,padding:"9px",fontSize:13,fontWeight:700,cursor:emailTo.trim()&&draftStatus!=="sending"?"pointer":"not-allowed"}}>
-                {draftStatus==="sending"?"Creating draft…":"📧 Create Gmail draft"}
+                {draftStatus==="sending"?"Creating draft…":"📧 Create draft / open mail app"}
               </button>
               <button onClick={function(){setShowCompose(false);setDraftStatus(null);}} style={{background:"#F3F4F6",color:"#374151",border:"none",borderRadius:8,padding:"9px 16px",fontSize:12,cursor:"pointer"}}>Cancel</button>
             </div>
-            <div style={{fontSize:10,color:"#9CA3AF",textAlign:"center"}}>A draft will be saved to Gmail — open Gmail to review before sending. The email address and timestamp are logged on this case.</div>
+            <div style={{fontSize:10,color:"#9CA3AF",textAlign:"center"}}>Primary path saves a Gmail draft. If Gmail draft service is unavailable, the app opens your local email client with prefilled content.</div>
           </div>
         </div>
       )}
