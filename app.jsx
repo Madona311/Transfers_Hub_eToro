@@ -4711,21 +4711,21 @@ function ClientTrackingPage(props){
   var opsMissing=[];
   if(c.status==="Pending Ops"){
     var opsChecks=[
-      ["accountNormal","Account validation"],
-      ["cashOk","Sufficient cash coverage"],
-      ["formComplete","Transfer form/instructions"],
-      ["fullStockOut","Full stock-out confirmation"],
-      ["proofOwnership","Proof of ownership"],
-      ["nwaZero","NWA balance clearance"],
-      ["lockedZero","Locked amount check"],
-      ["w8Ok","Tax form (W-8/W-9)"]
+      ["accountNormal","Please verify your account details"],
+      ["cashOk","Please ensure required account balance is available"],
+      ["formComplete","Please complete or re-submit the transfer form"],
+      ["fullStockOut","Please confirm all requested positions are included"],
+      ["proofOwnership","Please provide proof of account ownership"],
+      ["nwaZero","Please clear any pending account adjustments"],
+      ["lockedZero","Please remove any account restrictions/holds"],
+      ["w8Ok","Please provide the required tax form" ]
     ];
     opsChecks.forEach(function(ch){if(c[ch[0]]===false)opsMissing.push(ch[1]);});
   }
 
   var latestMsg="Request is being processed.";
   if(c.status==="Pending Ops"&&opsMissing.length){
-    latestMsg="Under OPS review. Missing items: "+opsMissing.join(", ")+".";
+    latestMsg="Under review. Action needed: "+opsMissing.join("; ")+".";
   }else if(c.status==="Pending Ops"||c.status==="Pending AML"){
     latestMsg="Under review by the operations/compliance team.";
   }else if(c.notes&&c.notes.length){
