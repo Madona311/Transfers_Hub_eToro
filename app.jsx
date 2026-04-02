@@ -430,12 +430,12 @@ var ROLE_VISIBLE_STAGES = {
 };
 
 var TAB_MAP = {
-  Requester:["🏠 Home","My Requests","My Queue","New Request"],
-  Operations:["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution"],
-  Risk:["🏠 Home","My Queue","All Cases"],
-  AML:["🏠 Home","My Queue","All Cases","Raw Data"],
-  "Middle Office":["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution"],
-  Trading:["🏠 Home","Raw Data","Execution"],
+  Requester:["🏠 Home","My Requests","My Queue","New Request","Reports"],
+  Operations:["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution","Reports"],
+  Risk:["🏠 Home","My Queue","All Cases","Reports"],
+  AML:["🏠 Home","My Queue","All Cases","Raw Data","Reports"],
+  "Middle Office":["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution","Reports"],
+  Trading:["🏠 Home","Raw Data","Execution","Reports"],
   Admin:["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution","Reports","QR Pilot","Permissions","History"]
 };
 
@@ -651,7 +651,7 @@ function RawDataTab(props) {
       </div>
 
       {/* Table */}
-      <div style={{overflowX:"auto",border:"1px solid #E5E7EB",borderRadius:12,maxHeight:"calc(100vh - 260px)",overflowY:"auto"}}>
+      <div style={{overflowX:"auto",border:"1px solid #E5E7EB",borderRadius:12,maxHeight:"calc(100vh - 170px)",minHeight:"72vh",overflowY:"auto"}}>
         <table style={{borderCollapse:"collapse",fontSize:11,width:"max-content",minWidth:"100%"}}>
           <thead>
             <tr style={{background:"#F9FAFB",position:"sticky",top:0,zIndex:1}}>
@@ -1500,6 +1500,7 @@ function CaseDetail(props) {
   var isAMLStage=c.status==="Pending AML"&&user.role==="AML";
   var isOpsStage=(c.status==="Submitted"||c.status==="Pending Ops")&&user.role==="Operations";
   var isRiskStage=c.status==="Pending Risk"&&user.role==="Risk";
+  var isAdmin=!!user.isAdmin||user.role==="Admin";
   var advanceLabel=isOpsStage?"Approve & send to Risk":(action?action.label:"");
 
   // Use opsClub (Ops-verified) if set, otherwise fall back to submitted club value
@@ -1572,6 +1573,13 @@ function CaseDetail(props) {
     var n={role:user.role,byName:user.name,text:"Rejected: "+rejectReason,date:new Date().toISOString().slice(0,10)};
     setCases(function(prev){return patchCase(prev,c.id,{status:"Rejected",notes:c.notes.concat([n])});});
     setShowReject(false);setRejectReason("");if(onReject)onReject();
+  }
+  function doDeleteCase(){
+    if(!isAdmin)return;
+    var ok=window.confirm("Delete request "+c.id+" permanently? This cannot be undone.");
+    if(!ok)return;
+    setCases(function(prev){return prev.filter(function(x){return x.id!==c.id;});});
+    if(onReject)onReject();
   }
 
   return (
@@ -1991,6 +1999,16 @@ function CaseDetail(props) {
           )}
         </div>
       )}
+
+      {isAdmin&&(
+        <div style={{border:"1px solid #FCA5A5",borderRadius:12,padding:14,background:"#FEF2F2"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#991B1B",marginBottom:10}}>Admin tools</div>
+          <button onClick={doDeleteCase}
+            style={{background:"#DC2626",color:"#fff",fontSize:12,fontWeight:700,border:"none",borderRadius:8,padding:"8px 14px",cursor:"pointer"}}>
+            🗑 Delete request permanently
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2407,7 +2425,7 @@ function QueueTab(props) {
   var queue=cases.filter(function(c){return qStages.includes(c.status);});
   var activeCase=null;
   for(var i=0;i<cases.length;i++){if(cases[i].id===sel){activeCase=cases[i];break;}}
-  var effectiveUser={id:user.id,name:user.name,email:user.email,role:activeRole};
+  var effectiveUser={id:user.id,name:user.name,email:user.email,role:activeRole,isAdmin:user.role==="Admin"};
   function advance(){
     var a=NEXT_ACTION[activeCase.status];
     if(!a)return;
@@ -2486,7 +2504,7 @@ function AllCasesTab(props) {
     return stageOk&&filterOk&&searchOk;
   });
   var active=null;for(var i=0;i<cases.length;i++){if(cases[i].id===sel){active=cases[i];break;}}
-  var effectiveUser={id:user.id,name:user.name,email:user.email,role:activeRole};
+  var effectiveUser={id:user.id,name:user.name,email:user.email,role:activeRole,isAdmin:user.role==="Admin"};
   function advance(){
     var a=NEXT_ACTION[active.status];if(!a)return;
     var nextStatus=a.next;
@@ -2557,7 +2575,8 @@ function NewRequestTab(props) {
     broker:"",brokerEmail:"",requesterAccountName:"",requesterAccountNumber:"",
     formFile:"",proofFile:"",
     assets:[],instruments:"",
-    formSigned:null   // null=unknown, true=signed, false=unsigned
+    formSigned:null,  // null=unknown, true=signed, false=unsigned
+    manualRequesterEmail:"",manualRequesterName:""
   };
   var [form,setForm]=useState(empty);
   var [parsing,setParsing]=useState(false);
@@ -2567,8 +2586,32 @@ function NewRequestTab(props) {
   var [feeError,setFeeError]=useState(false);
   var [sigError,setSigError]=useState(false);
   var [submitted,setSubmitted]=useState(false);
+  var [formErrors,setFormErrors]=useState([]);
 
   function setField(name,val){setForm(function(f){var n=cloneObj(f);n[name]=val;return n;});}
+
+  function getMissingRequiredFields(){
+    var missing=[];
+    function hasText(v){return !!(v&&String(v).trim());}
+    if(!hasText(form.clientName))missing.push("Full client name");
+    if(!hasText(form.cid))missing.push("Client CID");
+    if(!hasText(form.country))missing.push("Country");
+    if(!hasText(form.reason))missing.push("Transfer reason");
+    if(!hasText(form.valueUSD)||Number(form.valueUSD)<=0)missing.push("Approximate market value (USD)");
+    if(!hasText(form.broker))missing.push("Bank / broker name");
+    if(!hasText(form.brokerEmail))missing.push("Bank / broker email");
+    if(!hasText(form.requesterAccountName))missing.push("Requester account name");
+    if(!hasText(form.requesterAccountNumber))missing.push("Requester account number");
+    if(!hasText(form.formFile))missing.push("Securities Out Form (PDF)");
+    if(!hasText(form.proofFile))missing.push("Proof of Ownership");
+    if(!(form.assets&&form.assets.length>0))missing.push("Assets to transfer");
+    if(form.formSigned===false)missing.push("Signed form");
+    if(!feeAware)missing.push("Fee acknowledgement");
+    if(user.role==="Admin"&&hasText(form.manualRequesterEmail)&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.manualRequesterEmail.trim())){
+      missing.push("Manual requester email format is invalid");
+    }
+    return missing;
+  }
 
   function inp(label,key,type,placeholder){
     var isAuto=!!autofilled[key];
@@ -2742,19 +2785,29 @@ function NewRequestTab(props) {
   }
 
   function submit() {
-    if(!form.clientName||!form.cid||!form.broker)return;
-    if(!form.formFile)return;
-    if(form.formSigned===false){setSigError(true);return;}
-    if(!feeAware){setFeeError(true);return;}
+    var missing=getMissingRequiredFields();
+    if(missing.length){
+      setFormErrors(missing);
+      if(form.formSigned===false)setSigError(true);
+      if(!feeAware)setFeeError(true);
+      return;
+    }
+    setFormErrors([]);
     var numInstr=form.assets&&form.assets.length>0?form.assets.length:(Number(form.instruments)||1);
     var hasSanctioned=(form.assets&&form.assets.length)?form.assets.some(function(a){
       return isSanctionedAssetName((a&&a.name)||"")||isSanctionedAssetName((a&&a.symbol)||"");
     }):false;
+    var submittedByEmail=user.email;
+    var submittedByName=user.name;
+    if(user.role==="Admin"&&form.manualRequesterEmail&&form.manualRequesterEmail.trim()){
+      submittedByEmail=form.manualRequesterEmail.trim().toLowerCase();
+      submittedByName=(form.manualRequesterName&&form.manualRequesterName.trim())?form.manualRequesterName.trim():submittedByEmail;
+    }
     var nc=mkCase(
       "ACAT-2025-0"+(50+cases.length),
       form.cid,form.clientName,form.country,form.broker,
       numInstr,Number(form.valueUSD)||0,
-      "Submitted",user.email,user.name,
+      "Submitted",submittedByEmail,submittedByName,
       new Date().toISOString().slice(0,10),"Standard",
       {
         reason:form.reason,transferType:form.transferType,
@@ -2777,7 +2830,7 @@ function NewRequestTab(props) {
     if(form.proofFile)nc.documents.push({name:form.proofFile,label:"Proof of Ownership",by:user.name,date:new Date().toISOString().slice(0,10)});
     setCases(function(p){return [nc].concat(p);});
     setSubmitted(true);
-    setForm(empty);setFeeAware(false);setAutofilled({});setParseFields([]);setSigError(false);
+    setForm(empty);setFeeAware(false);setAutofilled({});setParseFields([]);setSigError(false);setFormErrors([]);
     setTimeout(function(){setSubmitted(false);},4000);
   }
 
@@ -2787,7 +2840,7 @@ function NewRequestTab(props) {
   var hasSanctionedAtSubmission=(form.assets&&form.assets.length)?form.assets.some(function(a){
     return isSanctionedAssetName((a&&a.name)||"")||isSanctionedAssetName((a&&a.symbol)||"");
   }):false;
-  var canSubmit=form.clientName&&form.cid&&form.broker&&form.formFile&&feeAware&&sigOk;
+  var canSubmit=getMissingRequiredFields().length===0;
 
   // Step header helper
   function StepHeader(sprops){
@@ -2943,6 +2996,35 @@ function NewRequestTab(props) {
             </div>
           </div>
         )}
+
+        {user.role==="Admin"&&(
+          <div style={{marginTop:12,background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"10px 12px"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#92400E",marginBottom:8}}>Admin requester override (optional)</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:3}}>Requester email (manual)</label>
+                <input
+                  type="email"
+                  style={{width:"100%",border:"1px solid #E5E7EB",borderRadius:8,padding:"7px 9px",fontSize:12,boxSizing:"border-box",background:"#fff"}}
+                  value={form.manualRequesterEmail}
+                  onChange={function(e){setField("manualRequesterEmail",e.target.value);setFormErrors([]);}}
+                  placeholder="e.g. requester@etoro.com"
+                />
+              </div>
+              <div>
+                <label style={{fontSize:11,color:"#6B7280",display:"block",marginBottom:3}}>Requester name (manual)</label>
+                <input
+                  type="text"
+                  style={{width:"100%",border:"1px solid #E5E7EB",borderRadius:8,padding:"7px 9px",fontSize:12,boxSizing:"border-box",background:"#fff"}}
+                  value={form.manualRequesterName}
+                  onChange={function(e){setField("manualRequesterName",e.target.value);}}
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+            <div style={{fontSize:10,color:"#92400E",marginTop:6}}>When email is filled, the case will be created on behalf of that requester.</div>
+          </div>
+        )}
       </div>
 
       {/* ── STEP 3 — Receiving bank / broker  (Blue) ── */}
@@ -3039,6 +3121,12 @@ function NewRequestTab(props) {
             <div style={{fontSize:13,fontWeight:700,color:"#991B1B"}}>Signature missing — cannot submit</div>
             <div style={{fontSize:11,color:"#B91C1C",marginTop:2}}>The form must be signed by the client. Go back to Step 1 and use the manual override if the signature was not detected.</div>
           </div>
+        </div>
+      )}
+      {formErrors.length>0&&(
+        <div style={{background:"#FEF2F2",border:"1px solid #FCA5A5",borderRadius:10,padding:"10px 12px",fontSize:11,color:"#991B1B",lineHeight:1.6}}>
+          <div style={{fontWeight:700,marginBottom:4}}>Complete all required fields before submitting:</div>
+          <div>{formErrors.join(" • ")}</div>
         </div>
       )}
       <button
@@ -5231,6 +5319,7 @@ function AuditHistoryTab(){
 function App() {
   var [user,setUser]=useState(null);
   var [tab,setTab]=useState(null);
+  var [sessionHydrated,setSessionHydrated]=useState(false);
 
   // ── localStorage persistence ──────────────────────────────────
   // Load cases from localStorage on first render, fall back to SEED
@@ -5290,22 +5379,63 @@ function App() {
   if(trackingView.enabled)return <ClientTrackingPage caseData={trackingView.caseData}/>;
 
   function handleLogin(u) {
+    var opts=arguments.length>1&&arguments[1]?arguments[1]:{};
     var fresh=null;
     for(var i=0;i<permissions.length;i++){if(permissions[i].email.toLowerCase()===u.email.toLowerCase()){fresh=permissions[i];break;}}
     var access=fresh?resolveUserAccess(fresh):{primary:"Requester",roles:["Requester"],tabs:TAB_MAP.Requester,queueStages:ROLE_QUEUE_STAGES.Requester||[],visibleStages:ROLE_VISIBLE_STAGES.Requester};
     var resolved={id:u.email,name:u.name,email:u.email,role:access.primary,roles:access.roles,tabs:access.tabs,queueStages:access.queueStages,visibleStages:access.visibleStages};
     if(u.accountName)resolved.accountName=u.accountName;
-    // Record audit entry
-    appendAuditEntry({
-      time:new Date().toISOString().replace("T"," ").slice(0,19),
-      name:u.name,
-      email:u.email,
-      role:access.primary,
-      action:"Signed in · roles: "+(access.roles||[access.primary]).join(", "),
-      ua:navigator.userAgent.slice(0,120)
-    });
+    if(!opts.skipAudit){
+      // Record audit entry
+      appendAuditEntry({
+        time:new Date().toISOString().replace("T"," ").slice(0,19),
+        name:u.name,
+        email:u.email,
+        role:access.primary,
+        action:"Signed in · roles: "+(access.roles||[access.primary]).join(", "),
+        ua:navigator.userAgent.slice(0,120)
+      });
+    }
     setUser(resolved);
-    setTab(access.tabs[0]);
+    if(opts.preferredTab&&access.tabs.includes(opts.preferredTab))setTab(opts.preferredTab);
+    else setTab(access.tabs[0]);
+  }
+
+  useEffect(function(){
+    if(user||sessionHydrated)return;
+    try{
+      var saved=localStorage.getItem("acatout_session");
+      if(saved){
+        var parsed=JSON.parse(saved);
+        if(parsed&&parsed.email){
+          handleLogin({
+            email:parsed.email,
+            name:parsed.name||parsed.email,
+            accountName:parsed.accountName||""
+          },{skipAudit:true,preferredTab:parsed.tab||null});
+        }
+      }
+    }catch(e){}
+    setSessionHydrated(true);
+  },[user,sessionHydrated,permissions]);
+
+  useEffect(function(){
+    try{
+      if(user){
+        localStorage.setItem("acatout_session",JSON.stringify({
+          email:user.email,
+          name:user.name,
+          accountName:user.accountName||"",
+          tab:tab||""
+        }));
+      }else{
+        localStorage.removeItem("acatout_session");
+      }
+    }catch(e){}
+  },[user,tab]);
+
+  if(!user&&!sessionHydrated){
+    return <div style={{fontFamily:"system-ui,sans-serif",padding:24,textAlign:"center",color:"#6B7280"}}>Restoring session...</div>;
   }
 
   if(!user)return <LoginScreen onLogin={handleLogin} permissions={permissions}/>;
