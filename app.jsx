@@ -4706,22 +4706,7 @@ function ClientTrackingPage(props){
   if(idx<0)idx=0;
   var progress=Math.max(8,Math.min(100,Math.round(((idx+1)/simpleStages.length)*100)));
 
-  var statusLabel=(c.status==="Pending Ops"||c.status==="Pending AML")?"Under review":c.status;
-
-  var locationMap={
-    "Submitted":"Request received and queued for initial review",
-    "Pending Ops":"Operations review in progress",
-    "Pending AML":"Compliance (AML) review in progress",
-    "Broker Outreach":"Broker coordination in progress",
-    "Execution Ready":"Approved and waiting for execution window",
-    "Executing":"Execution in progress",
-    "Completed - Waiting Transfer":"Execution completed, final transfer confirmation pending",
-    "Completed":"Completed",
-    "Returned to Requester":"Action required from requester",
-    "AML Review Pending":"Additional information requested by compliance",
-    "Rejected":"Request closed"
-  };
-  var currentLocation=locationMap[c.status]||"In processing";
+  var executionStages=["Broker Outreach","Execution Ready","Executing","Completed - Waiting Transfer","Completed"];
 
   var missingItems=[];
   var clientChecks=[
@@ -4734,9 +4719,17 @@ function ClientTrackingPage(props){
     ["lockedZero","Remove account restrictions/holds"],
     ["w8Ok","Provide required tax form"]
   ];
-  if(c.status==="Pending Ops"||c.status==="Returned to Requester"||c.status==="AML Review Pending"){
+  if(c.status==="Pending Ops"||c.status==="Pending AML"||c.status==="Returned to Requester"||c.status==="AML Review Pending"){
     clientChecks.forEach(function(ch){if(c[ch[0]]===false)missingItems.push(ch[1]);});
   }
+
+  var statusLabel="Under Review";
+  if(missingItems.length>0)statusLabel="Missing Requirements";
+  else if(executionStages.includes(c.status))statusLabel="In Execution";
+
+  var currentLocation=statusLabel;
+  if(statusLabel==="Missing Requirements")currentLocation="Missing requirements identified during review";
+  if(statusLabel==="In Execution")currentLocation="Request is currently in execution processing";
 
   var latestDate=(c.notes&&c.notes.length)?c.notes[c.notes.length-1].date:(c.submittedDate||"");
 
@@ -4746,11 +4739,9 @@ function ClientTrackingPage(props){
     title:"#374151",
     text:"#111827"
   };
-  if(c.status==="Pending Ops"||c.status==="Pending AML")locationTone={bg:"#EFF6FF",border:"#BFDBFE",title:"#1E40AF",text:"#1E3A8A"};
-  if(c.status==="Returned to Requester"||c.status==="AML Review Pending")locationTone={bg:"#FFF7ED",border:"#FED7AA",title:"#9A3412",text:"#7C2D12"};
-  if(c.status==="Broker Outreach"||c.status==="Execution Ready"||c.status==="Executing")locationTone={bg:"#ECFEFF",border:"#A5F3FC",title:"#0F766E",text:"#115E59"};
-  if(c.status==="Completed - Waiting Transfer"||c.status==="Completed")locationTone={bg:"#F0FDF4",border:"#86EFAC",title:"#166534",text:"#14532D"};
-  if(c.status==="Rejected")locationTone={bg:"#FEF2F2",border:"#FECACA",title:"#B91C1C",text:"#7F1D1D"};
+  if(statusLabel==="Under Review")locationTone={bg:"#EFF6FF",border:"#BFDBFE",title:"#1E40AF",text:"#1E3A8A"};
+  if(statusLabel==="Missing Requirements")locationTone={bg:"#FFF7ED",border:"#FED7AA",title:"#9A3412",text:"#7C2D12"};
+  if(statusLabel==="In Execution")locationTone={bg:"#ECFEFF",border:"#A5F3FC",title:"#0F766E",text:"#115E59"};
 
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F9FAFB",fontFamily:"system-ui,sans-serif",padding:20}}>
@@ -4771,14 +4762,14 @@ function ClientTrackingPage(props){
         <div style={{border:"1px solid "+locationTone.border,borderRadius:10,padding:12,background:locationTone.bg}}>
           <div style={{fontSize:11,fontWeight:700,color:locationTone.title,marginBottom:6}}>Current location</div>
           <div style={{fontSize:12,color:locationTone.text,fontWeight:600}}>{currentLocation}</div>
-          {(c.status==="Pending Ops"||c.status==="Returned to Requester"||c.status==="AML Review Pending")&&missingItems.length>0&&(
+          {statusLabel==="Missing Requirements"&&missingItems.length>0&&(
             <div style={{marginTop:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#9A3412",marginBottom:6}}>Action needed</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#9A3412",marginBottom:6}}>Missing requirements</div>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 {missingItems.map(function(item,i){
                   return (
                     <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px"}}>
-                      <span style={{fontSize:12,color:"#C2410C",lineHeight:1.3}}>•</span>
+                      <span style={{fontSize:12,color:"#C2410C",lineHeight:1.3,fontWeight:700}}>{i+1}.</span>
                       <span style={{fontSize:12,color:"#9A3412",lineHeight:1.4}}>{item}</span>
                     </div>
                   );
@@ -4791,10 +4782,9 @@ function ClientTrackingPage(props){
 
         <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:10}}>
           {[
-            ["Review","#DBEAFE","#1E40AF"],
-            ["Action needed","#FFEDD5","#9A3412"],
-            ["In progress","#CCFBF1","#0F766E"],
-            ["Completed","#DCFCE7","#166534"]
+            ["Under Review","#DBEAFE","#1E40AF"],
+            ["Missing Requirements","#FFEDD5","#9A3412"],
+            ["In Execution","#CCFBF1","#0F766E"]
           ].map(function(x){
             return <span key={x[0]} style={{fontSize:10,fontWeight:700,background:x[1],color:x[2],borderRadius:99,padding:"3px 10px",border:"1px solid "+x[2]+"22"}}>{x[0]}</span>;
           })}
