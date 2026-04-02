@@ -4778,9 +4778,21 @@ function ReportsTab(props) {
           {label:"Completion rate",  val:completionRate+"%", sub:completed.length+" completed", color:"#10B981"},
           {label:"Instruments",      val:totalInstruments,   sub:"total requested",     color:"#8B5CF6"},
         ].map(function(k,i){
+          var valContent;
+          var bracketMatch=String(k.val).match(/^(.*?)\s*\((.*)\)$/);
+          if(bracketMatch){
+            valContent=(
+              <span>
+                {bracketMatch[1]}
+                <span style={{fontSize:14,fontWeight:600,display:"inline-block",marginLeft:3}}>({'(' + bracketMatch[2] + ')'})</span>
+              </span>
+            );
+          }else{
+            valContent=k.val;
+          }
           return (
             <div key={k.label} className="r-card" style={{animationDelay:(i*50)+"ms",background:"#fff",border:"1px solid #E5E7EB",borderRadius:12,padding:"14px 14px 12px",borderTop:"3px solid "+k.color}}>
-              <div style={{fontSize:22,fontWeight:800,color:k.color,lineHeight:1,marginBottom:4}}>{k.val}</div>
+              <div style={{fontSize:22,fontWeight:800,color:k.color,lineHeight:1,marginBottom:4}}>{valContent}</div>
               <div style={{fontSize:11,fontWeight:700,color:"#111827"}}>{k.label}</div>
               <div style={{fontSize:10,color:"#9CA3AF",marginTop:2}}>{k.sub}</div>
             </div>
