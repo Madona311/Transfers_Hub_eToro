@@ -3285,10 +3285,20 @@ function NewRequestTab(props) {
             {form.formSigned===null&&parseFields.some(function(f){return f.includes("not found");})&&(
               <div style={{display:"flex",alignItems:"center",gap:10,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"10px 14px"}}>
                 <span style={{fontSize:18}}>❓</span>
-                <div>
+                <div style={{flex:1}}>
                   <div style={{fontSize:12,fontWeight:700,color:"#92400E"}}>Signature field not detected in this PDF</div>
                   <div style={{fontSize:11,color:"#78350F",marginTop:1}}>Use the manual confirmation below if you have visually verified the form is signed.</div>
                 </div>
+              </div>
+            )}
+
+            {form.formSigned===null&&parseFields.some(function(f){return f.includes("not found");})&&(
+              <div style={{marginTop:8,background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"10px 14px"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#92400E",marginBottom:6}}>Manual confirmation</div>
+                <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:11,color:"#78350F"}}>
+                  <input type="checkbox" onChange={function(e){if(e.target.checked){setField("formSigned",true);}else{setField("formSigned",null);}}} style={{width:14,height:14,flexShrink:0}}/>
+                  I have visually verified the client has signed this form
+                </label>
               </div>
             )}
 
