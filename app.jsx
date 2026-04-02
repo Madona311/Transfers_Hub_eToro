@@ -368,7 +368,7 @@ function mkCase(id,cid,nm,co,br,instr,val,status,byEmail,byName,date,club,extra)
     // Checklist — null=not reviewed, true=pass, false=fail
     accountNormal:null,cashOk:null,formComplete:null,fullStockOut:null,
     proofOwnership:null,nwaZero:null,lockedZero:null,w8Ok:null,
-    riskTriggered:false,
+    riskTriggered:false,riskLockedWaiver:null,
     // Extra checklist data fields
     clientBalance:"",      // entered by Ops for cashOk check
     lockedAmount:"",       // entered by Ops — 0 means lockedZero passes
@@ -1499,6 +1499,7 @@ function CaseDetail(props) {
   var isAMLReturn=c.status==="AML Review Pending"&&user.role==="Requester";
   var isAMLStage=c.status==="Pending AML"&&user.role==="AML";
   var isOpsStage=(c.status==="Submitted"||c.status==="Pending Ops")&&user.role==="Operations";
+  var isRiskStage=c.status==="Pending Risk"&&user.role==="Risk";
   var advanceLabel=(isOpsStage&&c.riskTriggered)?"Approve & send to Risk":(action?action.label:"");
 
   // Use opsClub (Ops-verified) if set, otherwise fall back to submitted club value
@@ -1531,8 +1532,13 @@ function CaseDetail(props) {
   });
   var anyFailed=CHECKLIST.some(function(item){
     var val=c[item[0]];
+    // lockedZero failing is NOT an Ops blocker when a locked amount has been entered —
+    // Risk owns the waiver decision, so Ops can approve and route to Risk.
+    if(item[0]==="lockedZero"&&val===false&&c.lockedAmount&&Number(c.lockedAmount)>0&&isOpsStage)return false;
     return val===false&&!isExempt(item[0],val);
   });
+  // Risk waiver gate: Risk must decide locked-amount waiver before advancing
+  var riskLockedPending=isRiskStage&&c.lockedZero===false&&c.lockedAmount&&Number(c.lockedAmount)>0&&c.riskLockedWaiver===null;
   var anyPending=CHECKLIST.some(function(item){return c[item[0]]===null||c[item[0]]===undefined;});
 
   // Failed items for pre-populating return reason
@@ -1737,6 +1743,36 @@ function CaseDetail(props) {
         )}
       </div>
 
+      {/* ── RISK: Locked amount waiver ── */}
+      {isRiskStage&&c.lockedZero===false&&c.lockedAmount&&Number(c.lockedAmount)>0&&(
+        <div style={{border:"2px solid "+(c.riskLockedWaiver===true?"#86EFAC":c.riskLockedWaiver===false?"#FCA5A5":"#FDE68A"),borderRadius:12,padding:14,background:c.riskLockedWaiver===true?"#F0FDF4":c.riskLockedWaiver===false?"#FEF2F2":"#FFFBEB"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:c.riskLockedWaiver===true?"#166534":c.riskLockedWaiver===false?"#991B1B":"#92400E"}}>🔒 Locked amount waiver</div>
+              <div style={{fontSize:11,color:"#6B7280",marginTop:2}}>Ops recorded a locked amount of <strong style={{color:"#DC2626"}}>${Number(c.lockedAmount).toLocaleString()}</strong>. You must decide whether to grant a waiver before approving this case.</div>
+            </div>
+            {c.riskLockedWaiver===null&&<span style={{fontSize:11,fontWeight:700,color:"#92400E",background:"#FEF3C7",border:"1px solid #FDE68A",borderRadius:99,padding:"3px 10px"}}>Decision required</span>}
+            {c.riskLockedWaiver===true&&<span style={{fontSize:11,fontWeight:700,color:"#166534",background:"#DCFCE7",border:"1px solid #86EFAC",borderRadius:99,padding:"3px 10px"}}>✓ Waiver approved</span>}
+            {c.riskLockedWaiver===false&&<span style={{fontSize:11,fontWeight:700,color:"#991B1B",background:"#FEE2E2",border:"1px solid #FCA5A5",borderRadius:99,padding:"3px 10px"}}>✗ Waiver denied</span>}
+          </div>
+          <div style={{display:"flex",gap:9}}>
+            <button
+              onClick={function(){setCases(function(prev){return updateCase(prev,c.id,"riskLockedWaiver",true);});}}
+              style={{flex:1,padding:"10px",fontSize:12,fontWeight:700,border:"2px solid "+(c.riskLockedWaiver===true?"#16A34A":"#86EFAC"),borderRadius:9,cursor:"pointer",background:c.riskLockedWaiver===true?"#16A34A":"#F0FDF4",color:c.riskLockedWaiver===true?"#fff":"#166534"}}>
+              ✓ Approve waiver
+            </button>
+            <button
+              onClick={function(){setCases(function(prev){return updateCase(prev,c.id,"riskLockedWaiver",false);});}}
+              style={{flex:1,padding:"10px",fontSize:12,fontWeight:700,border:"2px solid "+(c.riskLockedWaiver===false?"#DC2626":"#FCA5A5"),borderRadius:9,cursor:"pointer",background:c.riskLockedWaiver===false?"#DC2626":"#FEF2F2",color:c.riskLockedWaiver===false?"#fff":"#991B1B"}}>
+              ✗ Deny waiver — reject case
+            </button>
+          </div>
+          {c.riskLockedWaiver===false&&(
+            <div style={{marginTop:9,fontSize:11,color:"#991B1B",background:"#FEE2E2",border:"1px solid #FCA5A5",borderRadius:7,padding:"7px 10px"}}>Waiver denied. Use the Reject button below to reject this case with a reason.</div>
+          )}
+        </div>
+      )}
+
       <FormDataPanel c={c} setCases={setCases} user={user}/>
       <DocStrip caseData={c} setCases={setCases} user={user}/>
       {user.role==="Operations"&&!isRequesterReturn&&<OpsFields c={c} setCases={setCases}/>}
@@ -1909,17 +1945,20 @@ function CaseDetail(props) {
 
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {/* Approve / advance — styled by context */}
-                <button
+                {riskLockedPending&&(
+                <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:9,padding:"10px 13px",marginBottom:4,fontSize:12,color:"#92400E"}}>⚠ Locked amount waiver decision required above before approving.</div>
+              )}
+              <button
                   onClick={function(){if(onAdvance)onAdvance();}}
-                  disabled={isOpsStage&&(anyPending||anyFailed)}
+                  disabled={(isOpsStage&&(anyPending||anyFailed))||!!riskLockedPending}
                   style={{
                     flex:1,
                     background:
                       (isRequesterReturn||isAMLReturn)?"#EA580C":
-                      (isOpsStage&&(anyPending||anyFailed))?"#D1D5DB":"#16A34A",
+                      (isOpsStage&&(anyPending||anyFailed))||riskLockedPending?"#D1D5DB":"#16A34A",
                     color:"#fff",fontSize:13,fontWeight:700,border:"none",borderRadius:10,
                     padding:"11px 20px",
-                    cursor:(isOpsStage&&(anyPending||anyFailed))?"not-allowed":"pointer",
+                    cursor:((isOpsStage&&(anyPending||anyFailed))||riskLockedPending)?"not-allowed":"pointer",
                     minWidth:140
                   }}>
                   {isRequesterReturn?"↑ Re-submit to Operations":
