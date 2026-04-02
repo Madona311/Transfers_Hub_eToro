@@ -2726,6 +2726,13 @@ function NewRequestTab(props) {
         }
         return "";
       }
+      function pickFromSource(source,regexes){
+        for(var ri=0;ri<regexes.length;ri++){
+          var m=(source||"").match(regexes[ri]);
+          if(m&&m[1]&&String(m[1]).trim())return String(m[1]).trim();
+        }
+        return "";
+      }
 
       // ── Client Information (Page 1) ──
       // Try template-specific field IDs first, then fall back to keyword-based matching.
@@ -2850,14 +2857,107 @@ function NewRequestTab(props) {
           }
         }
       }
+
+      // OCR fallback for scanned/image PDFs where form fields/text extraction are limited.
+      var compactText=(allText||"").replace(/\s/g,"");
+      var criticalFilled=0;
+      ["clientName","cid","broker","requesterAccountName","requesterAccountNumber","valueUSD"].forEach(function(k){if(patch[k])criticalFilled++;});
+      var needOCR=criticalFilled<3||(!assets.length&&compactText.length<120);
+      if(needOCR){
+        try{
+          if(!window.Tesseract){
+            await new Promise(function(res,rej){
+              var ts=document.createElement("script");
+              ts.src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js";
+              ts.onload=res;
+              ts.onerror=rej;
+              document.head.appendChild(ts);
+            });
+          }
+          var ocrChunks=[];
+          var maxPages=Math.min(pdf.numPages,3);
+          for(var op=1;op<=maxPages;op++){
+            var opg=await pdf.getPage(op);
+            var viewport=opg.getViewport({scale:2});
+            var canvas=document.createElement("canvas");
+            canvas.width=Math.floor(viewport.width);
+            canvas.height=Math.floor(viewport.height);
+            var ctx=canvas.getContext("2d");
+            await opg.render({canvasContext:ctx,viewport:viewport}).promise;
+            var ocrRes=await window.Tesseract.recognize(canvas,"eng");
+            if(ocrRes&&ocrRes.data&&ocrRes.data.text)ocrChunks.push(ocrRes.data.text);
+          }
+          var ocrText=ocrChunks.join("\n").replace(/[ \t]+/g," ");
+          if(ocrText.replace(/\s/g,"").length>20){
+            if(!patch.clientName){
+              var oClient=pickFromSource(ocrText,[/(?:Client\s*Name|Full\s*Name|Name\s*of\s*Transferor)\s*[:\-]?\s*([^\n]{2,80})/i]);
+              if(oClient){patch.clientName=oClient;af.clientName=true;filled.push("Client name (OCR)");}
+            }
+            if(!patch.cid){
+              var oCid=pickFromSource(ocrText,[/(?:Client\s*CID|CID|Client\s*ID)\s*[:\-]?\s*([A-Za-z0-9\-]{3,30})/i]);
+              if(oCid){patch.cid=oCid;af.cid=true;filled.push("CID (OCR)");}
+            }
+            if(!patch.country){
+              var oCountry=pickFromSource(ocrText,[/(?:Country|Residence\s*Country)\s*[:\-]?\s*([A-Za-z ]{2,40})/i]);
+              if(oCountry){patch.country=oCountry;af.country=true;filled.push("Country (OCR)");}
+            }
+            if(!patch.reason){
+              var oReason=pickFromSource(ocrText,[/(?:Transfer\s*Reason|Reason)\s*[:\-]?\s*([^\n]{2,120})/i]);
+              if(oReason){patch.reason=oReason;af.reason=true;filled.push("Reason (OCR)");}
+            }
+            if(!patch.valueUSD){
+              var oVal=pickFromSource(ocrText,[/(?:Approx(?:imate)?\s*Market\s*Value|Market\s*Value|Value\s*\(USD\)|Value\s*USD)\s*[:\-]?\s*\$?\s*([0-9][0-9,\.]{1,20})/i]);
+              var oRaw=(oVal||"").replace(/[\$,\s]/g,"").trim();
+              if(oRaw&&!isNaN(Number(oRaw))){patch.valueUSD=oRaw;af.valueUSD=true;filled.push("Value (OCR)");}
+            }
+            if(!patch.broker){
+              var oBroker=pickFromSource(ocrText,[/(?:Receiving\s*(?:Bank|Broker)\s*Name|Bank\s*\/\s*Broker\s*Name|Broker\s*Name|Bank\s*Name)\s*[:\-]?\s*([^\n]{2,120})/i]);
+              if(oBroker){patch.broker=oBroker;af.broker=true;filled.push("Broker name (OCR)");}
+            }
+            if(!patch.brokerEmail){
+              var oEmail=pickFromSource(ocrText,[/(?:Broker\s*Email|Bank\s*Email|Receiving\s*Email|Email)\s*[:\-]?\s*([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})/i]);
+              if(oEmail){patch.brokerEmail=oEmail;af.brokerEmail=true;filled.push("Broker email (OCR)");}
+            }
+            if(!patch.requesterAccountName){
+              var oAccName=pickFromSource(ocrText,[/(?:Requester\s*Account\s*Name|Account\s*Holder\s*Name|Account\s*Name)\s*[:\-]?\s*([^\n]{2,120})/i]);
+              if(oAccName){patch.requesterAccountName=oAccName;af.requesterAccountName=true;filled.push("Account name (OCR)");}
+            }
+            if(!patch.requesterAccountNumber){
+              var oAccNum=pickFromSource(ocrText,[/(?:Requester\s*Account\s*Number|Account\s*Number|Account\s*ID)\s*[:\-]?\s*([A-Za-z0-9\-]{3,40})/i]);
+              if(oAccNum){patch.requesterAccountNumber=oAccNum;af.requesterAccountNumber=true;filled.push("Account number (OCR)");}
+            }
+            if(!assets.length){
+              var oSeen={};
+              var oLines=ocrText.split(/\n+/).map(function(l){return l.trim();}).filter(function(l){return l.length>0;});
+              for(var oli=0;oli<oLines.length;oli++){
+                var ol=oLines[oli].replace(/\s+/g," ");
+                var om1=ol.match(/^([A-Z0-9\.\-]{1,12})\s+([A-Za-z][A-Za-z0-9&\.,'\/\-\(\) ]{2,90})\s+([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s+([A-Za-z]{2,10}))?$/);
+                var om2=ol.match(/^([A-Za-z][A-Za-z0-9&\.,'\/\-\(\) ]{2,90})\s+([A-Z0-9\.\-]{1,12})\s+([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s+([A-Za-z]{2,10}))?$/);
+                var osym=""; var oname=""; var oqty=""; var oex="—";
+                if(om1){osym=om1[1];oname=om1[2].trim();oqty=om1[3];oex=om1[4]||"—";}
+                else if(om2){oname=om2[1].trim();osym=om2[2];oqty=om2[3];oex=om2[4]||"—";}
+                if(osym&&oname&&oqty){
+                  var okey=(osym+"|"+oname+"|"+oqty).toLowerCase();
+                  if(!oSeen[okey]){oSeen[okey]=true;assets.push({symbol:osym,name:oname,qty:oqty,exchange:oex});}
+                }
+              }
+              if(assets.length)filled.push(assets.length+" asset(s) detected (OCR)");
+            }
+          }
+        }catch(ocrErr){
+          console.warn("OCR fallback failed:",ocrErr);
+          filled.push("⚠ OCR fallback unavailable for this file.");
+        }
+      }
+
       if(assets.length){
         patch.instruments=assets.length;
         patch.assets=assets;
         filled.push(assets.length+" asset(s) detected");
       }
       if(!fieldEntries.length){
-        if((allText||"").replace(/\s/g,"").length<40)filled.push("⚠ This PDF appears to be image-only (scanned). Autofill cannot read it.");
-        else filled.push("⚠ This PDF version exposes limited form fields; using text-based extraction fallback.");
+        if((allText||"").replace(/\s/g,"").length<40)filled.push("⚠ This PDF appears scanned/image-based. OCR fallback was attempted.");
+        else filled.push("⚠ This PDF version exposes limited form fields; fallback extraction was used.");
       }
 
       // ── Signature detection ──
