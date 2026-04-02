@@ -4740,6 +4740,18 @@ function ClientTrackingPage(props){
 
   var latestDate=(c.notes&&c.notes.length)?c.notes[c.notes.length-1].date:(c.submittedDate||"");
 
+  var locationTone={
+    bg:"#FAFAFA",
+    border:"#E5E7EB",
+    title:"#374151",
+    text:"#111827"
+  };
+  if(c.status==="Pending Ops"||c.status==="Pending AML")locationTone={bg:"#EFF6FF",border:"#BFDBFE",title:"#1E40AF",text:"#1E3A8A"};
+  if(c.status==="Returned to Requester"||c.status==="AML Review Pending")locationTone={bg:"#FFF7ED",border:"#FED7AA",title:"#9A3412",text:"#7C2D12"};
+  if(c.status==="Broker Outreach"||c.status==="Execution Ready"||c.status==="Executing")locationTone={bg:"#ECFEFF",border:"#A5F3FC",title:"#0F766E",text:"#115E59"};
+  if(c.status==="Completed - Waiting Transfer"||c.status==="Completed")locationTone={bg:"#F0FDF4",border:"#86EFAC",title:"#166534",text:"#14532D"};
+  if(c.status==="Rejected")locationTone={bg:"#FEF2F2",border:"#FECACA",title:"#B91C1C",text:"#7F1D1D"};
+
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F9FAFB",fontFamily:"system-ui,sans-serif",padding:20}}>
       <div style={{maxWidth:620,width:"100%",background:"#fff",border:"1px solid #E5E7EB",borderRadius:14,padding:24}}>
@@ -4756,9 +4768,9 @@ function ClientTrackingPage(props){
         </div>
         <div style={{fontSize:11,color:"#6B7280",marginBottom:16}}>Progress {progress}%</div>
 
-        <div style={{border:"1px solid #E5E7EB",borderRadius:10,padding:12,background:"#FAFAFA"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:6}}>Current location</div>
-          <div style={{fontSize:12,color:"#111827",fontWeight:600}}>{currentLocation}</div>
+        <div style={{border:"1px solid "+locationTone.border,borderRadius:10,padding:12,background:locationTone.bg}}>
+          <div style={{fontSize:11,fontWeight:700,color:locationTone.title,marginBottom:6}}>Current location</div>
+          <div style={{fontSize:12,color:locationTone.text,fontWeight:600}}>{currentLocation}</div>
           {(c.status==="Pending Ops"||c.status==="Returned to Requester"||c.status==="AML Review Pending")&&missingItems.length>0&&(
             <div style={{marginTop:10}}>
               <div style={{fontSize:11,fontWeight:700,color:"#9A3412",marginBottom:6}}>Action needed</div>
