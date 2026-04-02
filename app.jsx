@@ -3163,7 +3163,7 @@ function ExecOpsLoad(props) {
         <div style={{border:"1px solid #C7D2FE",borderRadius:10,padding:"10px 14px",background:"#EEF2FF"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#3730A3",marginBottom:6}}>Paste all positions once (auto-distribute by CID)</div>
           <div style={{fontSize:10,color:"#6B7280",fontFamily:"monospace",background:"#fff",borderRadius:5,padding:"6px 9px",lineHeight:1.8,border:"1px solid #C7D2FE",marginBottom:8}}>
-            Format: CID / PositionID / InstrumentID / Asset name (tab-separated)
+            Format: tab-separated. Supported: Databricks header export, or CID / PositionID / InstrumentID / Asset name.
           </div>
           <textarea style={{width:"100%",minHeight:100,border:"1px solid #C7D2FE",borderRadius:8,padding:"7px 10px",fontSize:11,fontFamily:"monospace",boxSizing:"border-box"}} placeholder={"67234\t3093873742\t1003\tMeta Platforms Inc\n55129\t2088439301\t1005\tMicrosoft Corp"} value={p.opsBulkPaste} onChange={function(e){p.setOpsBulkPaste(e.target.value);}}/>
           <div style={{display:"flex",gap:8,marginTop:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -3377,6 +3377,12 @@ function ExecutionTab(props) {
     var lines=opsBulkPaste.trim().split("\n").filter(function(l){return l.trim();});
     if(!lines.length){setOpsParseInfo({type:"error",message:"Nothing pasted."});return;}
 
+    function normHeader(h){return String(h||"").toLowerCase().replace(/[^a-z0-9]/g,"");}
+    var headerCells=lines[0].split("\t").map(function(x){return x.trim();});
+    var headerMap={};
+    headerCells.forEach(function(h,idx){headerMap[normHeader(h)]=idx;});
+    var hasHeader=headerMap.cid!==undefined&&headerMap.positionid!==undefined&&headerMap.instrumentid!==undefined&&(headerMap.instrument!==undefined||headerMap.asset!==undefined||headerMap.assetname!==undefined);
+
     var readyByCid={};
     execReady.forEach(function(c){readyByCid[c.cid]=c;});
 
@@ -3389,15 +3395,31 @@ function ExecutionTab(props) {
       var cells=line.split("\t").map(function(x){return x.trim();});
       if(!cells.length)return;
 
-      var first=(cells[0]||"").toLowerCase();
-      if(li===0&&(first==="cid"||first==="case id"||first==="caseid"))return;
+      if(hasHeader&&li===0)return;
 
       var targetCase=null;
       var positionID="";
       var instrumentID="";
       var asset="";
+      var units="";
 
-      if(cells.length>=4) {
+      function cellByHeader(name){
+        var i=headerMap[name];
+        return i===undefined?"":(cells[i]||"").trim();
+      }
+
+      if(hasHeader) {
+        var cidVal=cellByHeader("cid");
+        targetCase=readyByCid[cidVal]||null;
+        if(targetCase) {
+          positionID=cellByHeader("positionid");
+          instrumentID=cellByHeader("instrumentid");
+          asset=cellByHeader("instrument")||cellByHeader("asset")||cellByHeader("assetname");
+          units=cellByHeader("amountinunitsdecimal")||"";
+        }
+      }
+
+      if(!targetCase&&cells.length>=4) {
         targetCase=readyByCid[cells[0]]||null;
         if(targetCase) {
           positionID=cells[1]||"";
@@ -3436,7 +3458,7 @@ function ExecutionTab(props) {
         asset:asset,
         instrumentID:instrumentID,
         positionID:positionID,
-        units:"",
+        units:units,
         forexRate:"",
         payment:"",
         tradingStatus:"New Request",
@@ -3460,7 +3482,7 @@ function ExecutionTab(props) {
       return n;
     });
 
-    if(!parsedCount){setOpsParseInfo({type:"error",message:"No valid rows found. Use tab-separated columns: CID, PositionID, InstrumentID, Asset."});return;}
+    if(!parsedCount){setOpsParseInfo({type:"error",message:"No valid rows found. Use tab-separated columns. Supported: Databricks header export or CID, PositionID, InstrumentID, Asset."});return;}
     setOpsParseInfo({type:"success",message:parsedCount+" row"+(parsedCount!==1?"s":"")+" distributed"+(dropped?"; "+dropped+" excluded":"")+"."});
   }
 
