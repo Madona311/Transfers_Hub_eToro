@@ -1,0 +1,24 @@
+{
+  "routes": [
+    {
+      "route": "/Transfers_Hub_eToro",
+      "rewrite": "/Transfers_Hub_eToro.html"
+    },
+    {
+      "route": "/app",
+      "rewrite": "/index.html"
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["*.jsx", "*.js", "*.css", "*.png", "*.svg", "*.ico"]
+  },
+  "globalHeaders": {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
+  },
+  "mimeTypes": {
+    ".jsx": "text/javascript"
+  }
+}
