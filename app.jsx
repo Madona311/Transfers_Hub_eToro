@@ -5,6 +5,7 @@
 var STAGE_NOTIFY_ROLE = {
   "Submitted":                  "Operations",
   "Pending Ops":                "Operations",
+  "Pending Risk":               "Risk",
   "Pending AML":                "AML",
   "AML Review Pending":         "Requester",
   "Broker Outreach":            "Middle Office",
@@ -39,6 +40,14 @@ async function draftNotificationEmail(nextStatus, caseData, permissions, actorNa
       .filter(function(p){ return (p.roles||[p.role]).includes(role); })
       .map(function(p){ return p.email; });
 
+    // For sanctioned submissions, alert AML in parallel for early review visibility.
+    var sanctionEscalation = !!caseData.opsSanctionStock && (nextStatus==="Submitted"||nextStatus==="Pending Ops");
+    if(sanctionEscalation){
+      permissions.forEach(function(p){
+        if((p.roles||[p.role]).includes("AML")&&!toList.includes(p.email))toList.push(p.email);
+      });
+    }
+
     // Also notify requester on return/complete/reject
     if(caseData.submittedBy && !toList.includes(caseData.submittedBy)) {
       if(["Returned to Requester","AML Review Pending","Completed","Rejected"].includes(nextStatus)) {
@@ -52,7 +61,7 @@ async function draftNotificationEmail(nextStatus, caseData, permissions, actorNa
 
     // Status pill colours
     var pillColors = {
-      "Submitted":"#7C3AED","Pending Ops":"#EA580C","Pending AML":"#EA580C",
+      "Submitted":"#7C3AED","Pending Ops":"#EA580C","Pending Risk":"#B45309","Pending AML":"#EA580C",
       "AML Review Pending":"#DC2626","Broker Outreach":"#0D9488",
       "Execution Ready":"#16A34A","Executing":"#4338CA",
       "Completed - Waiting Transfer":"#0D9488","Completed":"#374151",
@@ -63,6 +72,7 @@ async function draftNotificationEmail(nextStatus, caseData, permissions, actorNa
     var actionMessages = {
       "Submitted":                  "A new ACAT Out request has been submitted and is awaiting your review.",
       "Pending Ops":                "A case has been submitted and requires Operations review and approval.",
+      "Pending Risk":               "A case was flagged for risk checks and requires Risk approval.",
       "Pending AML":                "A case has passed Operations review and requires AML approval.",
       "AML Review Pending":         "AML has requested additional information on your transfer request. Please respond via the dashboard.",
       "Broker Outreach":            "AML has approved this case. Please initiate broker outreach to confirm transfer.",
@@ -73,6 +83,9 @@ async function draftNotificationEmail(nextStatus, caseData, permissions, actorNa
       "Completed":                  "Your transfer request has been successfully completed.",
       "Rejected":                   "A transfer request has been rejected. Please review the case notes for details.",
     };
+    if(sanctionEscalation){
+      actionMessages[nextStatus]="Sanctioned asset(s) detected. Risk trigger was applied automatically and AML was alerted.";
+    }
 
     var subject = "[Transfers Hub] Action required — " + nextStatus + " · " + caseData.clientName + " (" + caseData.id + ")";
 
@@ -194,6 +207,7 @@ async function draftBrokerEmail(to, subject, body) {
 var DEFAULT_PERMISSIONS = [
   {email:"omar.p@etoro.com",   name:"Omar P.",  roles:["Operations"],    pin:"1001", extraTabs:[]},
   {email:"nina.s@etoro.com",   name:"Nina S.",  roles:["Operations"],    pin:"1002", extraTabs:[]},
+  {email:"rachel.r@etoro.com", name:"Rachel R.",roles:["Risk"],          pin:"2501", extraTabs:[]},
   {email:"layla.m@etoro.com",  name:"Layla M.", roles:["AML"],           pin:"2001", extraTabs:[]},
   {email:"chris.b@etoro.com",  name:"Chris B.", roles:["Middle Office"], pin:"3001", extraTabs:[]},
   {email:"dana.t@etoro.com",   name:"Dana T.",  roles:["Middle Office"], pin:"3002", extraTabs:[]},
@@ -201,14 +215,15 @@ var DEFAULT_PERMISSIONS = [
   {email:"madonama@etoro.com", name:"Admin",    roles:["Admin"],         pin:"0000", extraTabs:[]},
 ];
 
-var ROLES = ["Operations","AML","Middle Office","Trading","Admin"];
-var ROLE_COLOR = {Requester:"#0D9488",Operations:"#7C3AED",AML:"#EA580C","Middle Office":"#2563EB",Trading:"#4338CA",Admin:"#374151"};
-var ROLE_DESC = {Requester:"Submit and track own requests",Operations:"Case review and Ops approval",AML:"AML review and approval","Middle Office":"Broker coordination and execution",Trading:"Position closure data entry",Admin:"Manage all user permissions"};
+var ROLES = ["Operations","Risk","AML","Middle Office","Trading","Admin"];
+var ROLE_COLOR = {Requester:"#0D9488",Operations:"#7C3AED",Risk:"#B45309",AML:"#EA580C","Middle Office":"#2563EB",Trading:"#4338CA",Admin:"#374151"};
+var ROLE_DESC = {Requester:"Submit and track own requests",Operations:"Case review and Ops approval",Risk:"Risk trigger validation and sign-off",AML:"AML review and approval","Middle Office":"Broker coordination and execution",Trading:"Position closure data entry",Admin:"Manage all user permissions"};
 
-var STAGES = ["Submitted","Pending Ops","Pending AML","Broker Outreach","Execution Ready","Executing","Completed - Waiting Transfer","Completed","Rejected","Returned to Requester","AML Review Pending"];
+var STAGES = ["Submitted","Pending Ops","Pending Risk","Pending AML","Broker Outreach","Execution Ready","Executing","Completed - Waiting Transfer","Completed","Rejected","Returned to Requester","AML Review Pending"];
 var STAGE_ROLE = {
   "Submitted":                   "Operations",
   "Pending Ops":                 "Operations",
+  "Pending Risk":                "Risk",
   "Pending AML":                 "AML",
   "Broker Outreach":             "Middle Office",
   "Execution Ready":             "Middle Office",
@@ -217,8 +232,9 @@ var STAGE_ROLE = {
   "AML Review Pending":          "Requester"
 };
 var NEXT_ACTION = {
-  "Submitted":              {label:"Approve & send to AML",          next:"Pending AML"},
+  "Submitted":              {label:"Approve",                         next:"Pending AML"},
   "Pending Ops":            {label:"Ops approve",                     next:"Pending AML"},
+  "Pending Risk":           {label:"Risk approve",                    next:"Pending AML"},
   "Pending AML":            {label:"AML approve",                     next:"Broker Outreach"},
   "Broker Outreach":        {label:"Broker confirmed",                next:"Execution Ready"},
   "Completed - Waiting Transfer":{label:"Confirm transfer to broker", next:"Completed"},
@@ -229,6 +245,7 @@ var NEXT_ACTION = {
 var STATUS_COLOR = {
   "Submitted":                   "#DBEAFE|#1E40AF",
   "Pending Ops":                 "#FEF3C7|#92400E",
+  "Pending Risk":                "#FFEDD5|#9A3412",
   "Pending AML":                 "#FFEDD5|#9A3412",
   "Broker Outreach":             "#CCFBF1|#134E4A",
   "Execution Ready":             "#DCFCE7|#166534",
@@ -243,6 +260,85 @@ var STATUS_COLOR = {
 function bs(s) {
   var p = (STATUS_COLOR[s]||"#F3F4F6|#374151").split("|");
   return {background:p[0],color:p[1],padding:"2px 10px",borderRadius:99,fontSize:11,fontWeight:600,whiteSpace:"nowrap",display:"inline-block"};
+}
+
+var SANCTIONED_ASSET_NAMES = [
+  "Gazprom OAO-ADR",
+  "Lukoil OAO-ADR",
+  "NOVATEK OAO",
+  "Rosneft OAO",
+  "Sberbank of Russia",
+  "Severstal PAO",
+  "Surgutneftegas OAO-ADR",
+  "Cnooc",
+  "China Communications Construction",
+  "China Unicom HK",
+  "China Telecom",
+  "CGN Power Co Ltd",
+  "China Mobile",
+  "China Railway Construction",
+  "Semiconductor Manufacturing International Corporation",
+  "Evraz PLC",
+  "Sberbank Moscow",
+  "CNNC International Ltd",
+  "SenseTime Group Inc",
+  "CSSC Offshore and Marine Engineering Group Co Ltd",
+  "CRCC High-Tech Equipment Corp Ltd",
+  "CSSC Hong Kong Shipping Co Ltd",
+  "CGN Mining Co Ltd",
+  "Nanjing Panda Electronics Co Ltd",
+  "Haitian International Holdings Ltd"
+];
+
+var SANCTIONED_ASSET_NORMALIZED = SANCTIONED_ASSET_NAMES.map(function(n){return normalizeAssetName(n);});
+
+function normalizeAssetName(name){
+  return String(name||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+}
+
+function isSanctionedAssetName(name){
+  var n=normalizeAssetName(name);
+  if(!n)return false;
+  for(var i=0;i<SANCTIONED_ASSET_NORMALIZED.length;i++){
+    var s=SANCTIONED_ASSET_NORMALIZED[i];
+    if(!s)continue;
+    if(n===s||n.indexOf(s)>=0||s.indexOf(n)>=0)return true;
+  }
+  return false;
+}
+
+function getCaseAssetNames(c){
+  var names=[];
+  var assets=(c&&c.formAssets&&c.formAssets.length?c.formAssets:(SEED_ASSETS[c.id]||[]));
+  assets.forEach(function(a){
+    if(a&&a.name)names.push(a.name);
+    if(a&&a.symbol)names.push(a.symbol);
+  });
+  (c&&c.execRows?c.execRows:[]).forEach(function(r){if(r&&r.asset)names.push(r.asset);});
+  return names;
+}
+
+function deriveSanctionStockFlag(c){
+  var names=getCaseAssetNames(c);
+  for(var i=0;i<names.length;i++){
+    if(isSanctionedAssetName(names[i]))return true;
+  }
+  return false;
+}
+
+function syncSanctionFlags(cases){
+  var changed=false;
+  var next=cases.map(function(c){
+    var autoFlag=deriveSanctionStockFlag(c);
+    var needsRiskAuto=autoFlag&&c.riskTriggered!==true;
+    if(!!c.opsSanctionStock===autoFlag&&!needsRiskAuto)return c;
+    changed=true;
+    var n=cloneObj(c);
+    n.opsSanctionStock=autoFlag;
+    if(autoFlag)n.riskTriggered=true;
+    return n;
+  });
+  return changed?next:cases;
 }
 
 var SEED_ASSETS = {
@@ -272,6 +368,7 @@ function mkCase(id,cid,nm,co,br,instr,val,status,byEmail,byName,date,club,extra)
     // Checklist — null=not reviewed, true=pass, false=fail
     accountNormal:null,cashOk:null,formComplete:null,fullStockOut:null,
     proofOwnership:null,nwaZero:null,lockedZero:null,w8Ok:null,
+    riskTriggered:false,
     // Extra checklist data fields
     clientBalance:"",      // entered by Ops for cashOk check
     lockedAmount:"",       // entered by Ops — 0 means lockedZero passes
@@ -281,7 +378,7 @@ function mkCase(id,cid,nm,co,br,instr,val,status,byEmail,byName,date,club,extra)
     compensationNote:"ACATSOUT"+baseRef,   // kept in sync with opsReference
     executionDate:"",tradingAmount:"",tradingClosedBy:"",asset:"",
     execRows:[],notes:[],documents:[],
-    opsClub:"",opsSanctionStock:false,opsFCMU:"Pending",opsCustomFields:[],
+    opsClub:"",opsSanctionStock:false,opsCustomFields:[],
     // Broker communication tracking
     brokerDraftedAt:"",brokerEmailSentAt:"",brokerRepliedAt:"",brokerEmailTo:"",
     moMOID:"",moInstrumentID:"",moISIN:"",moCUSIP:"",moHedgeServer:"",
@@ -317,6 +414,7 @@ var SEED = [
 var ROLE_QUEUE_STAGES = {
   Requester:       ["Returned to Requester","AML Review Pending"],
   Operations:      ["Submitted","Pending Ops"],
+  Risk:            ["Pending Risk"],
   AML:             ["Pending AML"],
   "Middle Office": ["Broker Outreach","Execution Ready","Completed - Waiting Transfer"],
   Trading:         ["Executing"],
@@ -324,6 +422,7 @@ var ROLE_QUEUE_STAGES = {
 var ROLE_VISIBLE_STAGES = {
   Requester:       STAGES,
   Operations:      STAGES,
+  Risk:            ["Pending Risk","Pending AML","Rejected","Completed"],
   AML:             ["Pending AML","AML Review Pending","Execution Ready","Completed","Rejected"],
   "Middle Office": STAGES,
   Trading:         ["Execution Ready","Executing","Completed - Waiting Transfer","Completed"],
@@ -333,6 +432,7 @@ var ROLE_VISIBLE_STAGES = {
 var TAB_MAP = {
   Requester:["🏠 Home","My Requests","My Queue","New Request"],
   Operations:["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution"],
+  Risk:["🏠 Home","My Queue","All Cases"],
   AML:["🏠 Home","My Queue","All Cases","Raw Data"],
   "Middle Office":["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution"],
   Trading:["🏠 Home","Raw Data","Execution"],
@@ -347,7 +447,7 @@ Object.keys(TAB_MAP).forEach(function(r){TAB_MAP[r].forEach(function(t){if(!ALL_
 // Merges roles[], extraTabs[] into a single resolved access object.
 function resolveUserAccess(perm) {
   var roles=perm.roles||(perm.role?[perm.role]:["Requester"]);
-  var priority=["Admin","Middle Office","Operations","AML","Trading","Requester"];
+  var priority=["Admin","Middle Office","Operations","Risk","AML","Trading","Requester"];
   var primary="Requester";
   for(var i=0;i<priority.length;i++){if(roles.includes(priority[i])){primary=priority[i];break;}}
   // Merge tabs
@@ -370,7 +470,7 @@ function resolveUserAccess(perm) {
 var RAW_FIELDS = {
   Operations:[
     "id","cid","clientName","country","opsClub","submittedDate","submittedByName","status","rejectionReason",
-    "ticketRef","opsReference","opsSanctionStock","opsFCMU","fees",
+    "ticketRef","opsReference","opsSanctionStock","fees",
     "accountNormal","cashOk","clientBalance","formComplete","fullStockOut",
     "proofOwnership","nwaZero","lockedZero","lockedAmount","w8Ok",
     "transferType","broker","brokerEmail","requesterAccountName","requesterAccountNumber","executionDate"
@@ -397,7 +497,7 @@ var RAW_FIELDS = {
     "instruments","valueUSD","fees","status","rejectionReason","submittedDate","submittedByName",
     "ticketRef","opsReference","accountNormal","cashOk","clientBalance","formComplete","fullStockOut",
     "proofOwnership","nwaZero","lockedZero","lockedAmount","w8Ok",
-    "opsSanctionStock","opsFCMU","executionDate","tradingAmount"
+    "opsSanctionStock","executionDate","tradingAmount"
   ]
 };
 
@@ -408,7 +508,7 @@ var FL = {
   transferType:"Type",instruments:"Instr",valueUSD:"Value USD",
   opsClub:"Club",club:"Club (submitted)",status:"Status",
   submittedDate:"Submitted",submittedByName:"By",fees:"Fees",
-  opsSanctionStock:"Sanction",opsFCMU:"FCMU",
+  opsSanctionStock:"Sanction",
   opsReference:"Reference",clientBalance:"Client balance",lockedAmount:"Locked amt",
   accountNormal:"Acct OK",cashOk:"Cash OK",formComplete:"Form OK",
   fullStockOut:"Full stock out",proofOwnership:"Proof",
@@ -626,7 +726,7 @@ var BO_COLORS={"Pending":["#F3F4F6","#6B7280"],"Completed":["#DCFCE7","#166534"]
 
 function RoleSwitcher(props) {
   var viewRole=props.viewRole; var setViewRole=props.setViewRole; var cases=props.cases; var mode=props.mode;
-  var roles=["Requester","Operations","AML","Middle Office","Trading"];
+  var roles=["Requester","Operations","Risk","AML","Middle Office","Trading"];
   return (
     <div style={{border:"2px solid #E5E7EB",borderRadius:12,padding:"12px 16px",background:"#F9FAFB",marginBottom:4}}>
       <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:10}}>Admin - View as role:</div>
@@ -662,7 +762,7 @@ function RoleSwitcher(props) {
 function ProgressTracker(props) {
   var status=props.status;
   // Linear progress stages only (not terminal states)
-  var LINEAR=["Submitted","Pending Ops","Pending AML","Broker Outreach","Execution Ready","Executing","Completed - Waiting Transfer","Completed"];
+  var LINEAR=["Submitted","Pending Ops","Pending Risk","Pending AML","Broker Outreach","Execution Ready","Executing","Completed - Waiting Transfer","Completed"];
   var idx=LINEAR.indexOf(status);
   var pct=idx<0?0:Math.max(0,Math.min(100,Math.round((idx/(LINEAR.length-1))*100)));
   var isTerminal=status==="Rejected"||status==="Returned to Requester";
@@ -788,20 +888,14 @@ function OpsFields(props) {
           )}
         </div>
 
-        {/* FCMU */}
-        <div>
-          <label style={{fontSize:10,color:"#9CA3AF",display:"block",marginBottom:2}}>FCMU approval</label>
-          <select style={{width:"100%",border:"1px solid #E5E7EB",borderRadius:6,padding:"5px 7px",fontSize:11,background:"#fff"}} value={c.opsFCMU||""} onChange={function(e){set1("opsFCMU",e.target.value);}}>
-            {["Pending","Approved","Rejected"].map(function(o){return <option key={o}>{o}</option>;})}
-          </select>
-        </div>
-
-        {/* Sanction stock */}
+        {/* Sanction stock — auto-detected from asset names */}
         <div style={{display:"flex",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:7,padding:"7px 10px",background:c.opsSanctionStock?"#FEF2F2":"#F0FDF4",borderRadius:8,border:"1px solid "+(c.opsSanctionStock?"#FCA5A5":"#86EFAC"),width:"100%",boxSizing:"border-box"}}>
-            <input type="checkbox" checked={!!c.opsSanctionStock} onChange={function(e){set1("opsSanctionStock",e.target.checked);}} style={{width:14,height:14,cursor:"pointer",flexShrink:0}}/>
-            <span style={{fontSize:11,fontWeight:600,color:c.opsSanctionStock?"#991B1B":"#166534"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:4,padding:"7px 10px",background:c.opsSanctionStock?"#FEF2F2":"#F0FDF4",borderRadius:8,border:"1px solid "+(c.opsSanctionStock?"#FCA5A5":"#86EFAC"),width:"100%",boxSizing:"border-box"}}>
+            <span style={{fontSize:11,fontWeight:700,color:c.opsSanctionStock?"#991B1B":"#166534"}}>
               Sanction stock {c.opsSanctionStock?"⚠ YES":"✓ No"}
+            </span>
+            <span style={{fontSize:10,color:c.opsSanctionStock?"#B91C1C":"#15803D"}}>
+              Auto-detected from uploaded asset names
             </span>
           </div>
         </div>
@@ -1405,6 +1499,7 @@ function CaseDetail(props) {
   var isAMLReturn=c.status==="AML Review Pending"&&user.role==="Requester";
   var isAMLStage=c.status==="Pending AML"&&user.role==="AML";
   var isOpsStage=(c.status==="Submitted"||c.status==="Pending Ops")&&user.role==="Operations";
+  var advanceLabel=(isOpsStage&&c.riskTriggered)?"Approve & send to Risk":(action?action.label:"");
 
   // Use opsClub (Ops-verified) if set, otherwise fall back to submitted club value
   var effectiveClub=c.opsClub||c.club||"";
@@ -1509,6 +1604,19 @@ function CaseDetail(props) {
         {isOpsStage&&(
           <div style={{fontSize:11,color:"#7C3AED",background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:7,padding:"6px 10px",marginBottom:10}}>
             ✏️ Review each item and mark pass or fail. You must clear all items before approving.
+          </div>
+        )}
+
+        {isOpsStage&&(
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"#92400E"}}>Risk trigger check</div>
+              <div style={{fontSize:10,color:"#B45309"}}>If triggered, approval route will go to Risk before AML.</div>
+            </div>
+            <label style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:c.riskTriggered?"#B45309":"#6B7280",cursor:"pointer"}}>
+              <input type="checkbox" checked={!!c.riskTriggered} onChange={function(e){setCases(function(prev){return updateCase(prev,c.id,"riskTriggered",e.target.checked);});}}/>
+              {c.riskTriggered?"Risk triggered":"No risk trigger"}
+            </label>
           </div>
         )}
 
@@ -1816,7 +1924,7 @@ function CaseDetail(props) {
                   }}>
                   {isRequesterReturn?"↑ Re-submit to Operations":
                    isAMLReturn?"↑ Re-submit to AML":
-                   "✓ "+action.label}
+                   "✓ "+advanceLabel}
                 </button>
 
                 {/* Return to requester — Ops stage only */}
@@ -1966,7 +2074,7 @@ function OverviewTab(props) {
                 </div>
                 {/* Progress bar */}
                 {(function(){
-                  var LINEAR=["Submitted","Pending Ops","Pending AML","Broker Outreach","Execution Ready","Executing","Completed - Waiting Transfer","Completed"];
+                  var LINEAR=["Submitted","Pending Ops","Pending Risk","Pending AML","Broker Outreach","Execution Ready","Executing","Completed - Waiting Transfer","Completed"];
                   var idx=LINEAR.indexOf(c.status);
                   var pct=idx<0?0:Math.round(idx/(LINEAR.length-1)*100);
                   return (
@@ -2036,6 +2144,7 @@ function OverviewTab(props) {
   var PIPELINE=[
     {s:"Submitted",        role:"Operations",     color:"#7C3AED"},
     {s:"Pending Ops",      role:"Operations",     color:"#7C3AED"},
+    {s:"Pending Risk",     role:"Risk",           color:"#B45309"},
     {s:"Pending AML",      role:"AML",            color:"#EA580C"},
     {s:"AML Review Pending",role:"AML",           color:"#EA580C"},
     {s:"Broker Outreach",  role:"Middle Office",  color:"#2563EB"},
@@ -2048,6 +2157,7 @@ function OverviewTab(props) {
 
   var ROLE_STATS=[
     {role:"Operations",    color:"#7C3AED", stages:["Submitted","Pending Ops"]},
+    {role:"Risk",          color:"#B45309", stages:["Pending Risk"]},
     {role:"AML",           color:"#EA580C", stages:["Pending AML","AML Review Pending"]},
     {role:"Middle Office", color:"#2563EB", stages:["Broker Outreach","Execution Ready","Completed - Waiting Transfer"]},
     {role:"Trading",       color:"#4338CA", stages:["Executing"]},
@@ -2273,7 +2383,11 @@ function QueueTab(props) {
   function advance(){
     var a=NEXT_ACTION[activeCase.status];
     if(!a)return;
-    var patch={status:a.next};
+    var nextStatus=a.next;
+    if((activeCase.status==="Submitted"||activeCase.status==="Pending Ops")&&activeCase.riskTriggered===true){
+      nextStatus="Pending Risk";
+    }
+    var patch={status:nextStatus};
     if(activeCase.status==="Returned to Requester"||activeCase.status==="AML Review Pending"){
       var isAML=activeCase.status==="AML Review Pending";
       var noteText=isAML?"Re-submitted to AML with requested information.":"Re-submitted to Operations after addressing the issues.";
@@ -2285,7 +2399,7 @@ function QueueTab(props) {
     setSel(null);
     // Fire notification email (best-effort, non-blocking)
     setNotifStatus("sending");
-    draftNotificationEmail(a.next,updatedCase,permissions,user.name)
+    draftNotificationEmail(nextStatus,updatedCase,permissions,user.name)
       .then(function(){setNotifStatus("sent");setTimeout(function(){setNotifStatus(null);},4000);})
       .catch(function(){setNotifStatus("failed");setTimeout(function(){setNotifStatus(null);},4000);});
   }
@@ -2309,6 +2423,7 @@ function QueueTab(props) {
           <div style={{fontSize:12,fontWeight:600,color:color,marginBottom:2}}>{queue.length} case{queue.length!==1?"s":""} pending - {activeRole}</div>
           {queue.length===0&&<div style={{fontSize:13,color:"#9CA3AF",textAlign:"center",padding:"30px 0"}}>Queue is clear</div>}
           {queue.map(function(c) {
+            var showSanctionBadge=(activeRole==="Operations"||activeRole==="Risk"||activeRole==="AML")&&!!c.opsSanctionStock;
             return (
               <div key={c.id} onClick={function(){setSel(sel===c.id?null:c.id);}} style={{border:"2px solid "+(sel===c.id?color:"#E5E7EB"),borderRadius:12,padding:11,cursor:"pointer",background:sel===c.id?color+"0D":"#fff"}}>
                 <div style={{fontSize:9,color:"#9CA3AF",fontWeight:600}}>{c.id}</div>
@@ -2316,6 +2431,7 @@ function QueueTab(props) {
                 <div style={{fontSize:11,color:"#6B7280"}}>{c.cid} - {c.country} - {c.opsClub||c.club}</div>
                 <div style={{fontSize:11,color:"#6B7280",marginBottom:5}}>{c.broker} - ${Number(c.valueUSD).toLocaleString()}</div>
                 <span style={bs(c.status)}>{c.status}</span>
+                {showSanctionBadge&&<div style={{marginTop:5,fontSize:10,fontWeight:800,color:"#991B1B",background:"#FEE2E2",border:"1px solid #FCA5A5",borderRadius:99,padding:"2px 8px",display:"inline-block"}}>⚠ Sanction Alert</div>}
               </div>
             );
           })}
@@ -2348,7 +2464,11 @@ function AllCasesTab(props) {
   var effectiveUser={id:user.id,name:user.name,email:user.email,role:activeRole};
   function advance(){
     var a=NEXT_ACTION[active.status];if(!a)return;
-    var patch={status:a.next};
+    var nextStatus=a.next;
+    if((active.status==="Submitted"||active.status==="Pending Ops")&&active.riskTriggered===true){
+      nextStatus="Pending Risk";
+    }
+    var patch={status:nextStatus};
     if(active.status==="Returned to Requester"||active.status==="AML Review Pending"){
       var isAML=active.status==="AML Review Pending";
       var noteText=isAML?"Re-submitted to AML with requested information.":"Re-submitted to Operations after addressing the issues.";
@@ -2358,7 +2478,7 @@ function AllCasesTab(props) {
     var updatedCase=Object.assign({},active,patch);
     setCases(function(prev){return patchCase(prev,active.id,patch);});
     setNotifStatus("sending");
-    draftNotificationEmail(a.next,updatedCase,permissions,user.name)
+    draftNotificationEmail(nextStatus,updatedCase,permissions,user.name)
       .then(function(){setNotifStatus("sent");setTimeout(function(){setNotifStatus(null);},4000);})
       .catch(function(){setNotifStatus("failed");setTimeout(function(){setNotifStatus(null);},4000);});
   }
@@ -2386,12 +2506,14 @@ function AllCasesTab(props) {
           </div>
           <div style={{fontSize:10,color:"#9CA3AF",marginBottom:5}}>{filtered.length} case{filtered.length!==1?"s":""} visible to {activeRole}</div>
           {filtered.map(function(c) {
+            var showSanctionBadge=(activeRole==="Operations"||activeRole==="Risk"||activeRole==="AML")&&!!c.opsSanctionStock;
             return (
               <div key={c.id} onClick={function(){setSel(sel===c.id?null:c.id);}} style={{border:"2px solid "+(sel===c.id?"#6366F1":"#E5E7EB"),borderRadius:10,padding:"9px 11px",marginBottom:5,cursor:"pointer",background:sel===c.id?"#EEF2FF":"#fff"}}>
                 <div style={{fontSize:9,color:"#9CA3AF",fontWeight:600}}>{c.id}</div>
                 <div style={{fontSize:13,fontWeight:600}}>{c.clientName}</div>
                 <div style={{fontSize:11,color:"#6B7280"}}>{c.cid} - {c.broker}</div>
                 <div style={{marginTop:4}}><span style={bs(c.status)}>{c.status}</span></div>
+                {showSanctionBadge&&<div style={{marginTop:5,fontSize:10,fontWeight:800,color:"#991B1B",background:"#FEE2E2",border:"1px solid #FCA5A5",borderRadius:99,padding:"2px 8px",display:"inline-block"}}>⚠ Sanction Alert</div>}
               </div>
             );
           })}
@@ -2407,6 +2529,7 @@ function AllCasesTab(props) {
 
 function NewRequestTab(props) {
   var cases=props.cases; var setCases=props.setCases; var user=props.user;
+  var permissions=props.permissions||[];
   var empty={
     clientName:"",cid:"",country:"",reason:"",valueUSD:"",transferType:"NCBO",
     broker:"",brokerEmail:"",requesterAccountName:"",requesterAccountNumber:"",
@@ -2602,6 +2725,9 @@ function NewRequestTab(props) {
     if(form.formSigned===false){setSigError(true);return;}
     if(!feeAware){setFeeError(true);return;}
     var numInstr=form.assets&&form.assets.length>0?form.assets.length:(Number(form.instruments)||1);
+    var hasSanctioned=(form.assets&&form.assets.length)?form.assets.some(function(a){
+      return isSanctionedAssetName((a&&a.name)||"")||isSanctionedAssetName((a&&a.symbol)||"");
+    }):false;
     var nc=mkCase(
       "ACAT-2025-0"+(50+cases.length),
       form.cid,form.clientName,form.country,form.broker,
@@ -2615,10 +2741,16 @@ function NewRequestTab(props) {
         requesterAccountNumber:form.requesterAccountNumber,
         formAssets:form.assets,
         formSigned:form.formSigned,
+        opsSanctionStock:hasSanctioned,
+        riskTriggered:hasSanctioned,
         documents:[]
         // opsReference and compensationNote auto-generated by mkCase via nextRef()
       }
     );
+    if(hasSanctioned){
+      nc.notes.push({role:"Risk",byName:"System",text:"Auto-warning: Sanctioned asset detected. Risk trigger enabled and AML alerted at submission.",date:new Date().toISOString().slice(0,10)});
+      draftNotificationEmail("Submitted",nc,permissions,user.name).catch(function(){});
+    }
     if(form.formFile)nc.documents.push({name:form.formFile,label:"Securities Out Form",by:user.name,date:new Date().toISOString().slice(0,10)});
     if(form.proofFile)nc.documents.push({name:form.proofFile,label:"Proof of Ownership",by:user.name,date:new Date().toISOString().slice(0,10)});
     setCases(function(p){return [nc].concat(p);});
@@ -2630,6 +2762,9 @@ function NewRequestTab(props) {
   var numAssets=form.assets&&form.assets.length>0?form.assets.length:(Number(form.instruments)||0);
   var totalFee=numAssets*100;
   var sigOk=form.formSigned!==false;   // null (not parsed yet) = allow; false = block
+  var hasSanctionedAtSubmission=(form.assets&&form.assets.length)?form.assets.some(function(a){
+    return isSanctionedAssetName((a&&a.name)||"")||isSanctionedAssetName((a&&a.symbol)||"");
+  }):false;
   var canSubmit=form.clientName&&form.cid&&form.broker&&form.formFile&&feeAware&&sigOk;
 
   // Step header helper
@@ -2773,6 +2908,16 @@ function NewRequestTab(props) {
             <div>
               <div style={{fontSize:12,fontWeight:700,color:"#991B1B",marginBottom:2}}>CBO transfers are not accepted</div>
               <div style={{fontSize:11,color:"#B91C1C",lineHeight:1.5}}>Only NCBO (No Change of Beneficial Owner) transfers are processed. Please confirm with the client that the receiving account is in their own name, then switch to NCBO.</div>
+            </div>
+          </div>
+        )}
+
+        {hasSanctionedAtSubmission&&(
+          <div style={{marginTop:12,background:"#FEF2F2",border:"2px solid #FCA5A5",borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
+            <span style={{fontSize:18,flexShrink:0}}>⚠</span>
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:"#991B1B",marginBottom:2}}>Sanction warning detected</div>
+              <div style={{fontSize:11,color:"#B91C1C",lineHeight:1.5}}>This request includes sanctioned asset names. Risk is auto-triggered and AML will be alerted on submission.</div>
             </div>
           </div>
         )}
@@ -4890,29 +5035,52 @@ function LoginScreen(props) {
   var digits=["1","2","3","4","5","6","7","8","9","","0","<"];
 
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F9FAFB",fontFamily:"system-ui,sans-serif",padding:20}}>
-      <div style={{maxWidth:360,width:"100%"}}>
-        <div style={{textAlign:"center",marginBottom:28}}>
-          <div style={{fontSize:30,fontWeight:800,color:"#111827",letterSpacing:-1}}>ACAT Out</div>
-          <div style={{fontSize:14,color:"#6B7280",marginTop:4}}>Securities transfer tracker</div>
+    <div style={{minHeight:"100vh",position:"relative",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"radial-gradient(circle at 12% 18%, #fde68a 0%, #fef3c7 22%, #fff7ed 40%, #eff6ff 68%, #f8fafc 100%)",fontFamily:"'Space Grotesk','Manrope',sans-serif"}}>
+      <div style={{position:"absolute",top:14,right:14,background:"#0f172a",color:"#f8fafc",border:"1px solid #334155",borderRadius:99,padding:"5px 10px",fontSize:10,fontWeight:800,letterSpacing:.6}}>LOGIN REFRESH v2</div>
+      <div style={{position:"absolute",top:-120,left:-80,width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,#fb7185 0%,#fb718500 70%)",filter:"blur(2px)",opacity:.35}}/>
+      <div style={{position:"absolute",bottom:-140,right:-60,width:360,height:360,borderRadius:"50%",background:"radial-gradient(circle,#22d3ee 0%,#22d3ee00 72%)",filter:"blur(2px)",opacity:.28}}/>
+      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:980,display:"flex",flexWrap:"wrap",gap:16,alignItems:"stretch",justifyContent:"center"}}>
+        <div style={{flex:"1 1 320px",minWidth:280,maxWidth:520,background:"linear-gradient(145deg,#0f172a,#1f2937)",border:"1px solid #334155",borderRadius:20,padding:24,color:"#E2E8F0",boxShadow:"0 18px 40px rgba(15,23,42,.28)",display:"flex",flexDirection:"column",justifyContent:"space-between",gap:16}}>
+          <div>
+            <div style={{fontSize:12,fontWeight:700,letterSpacing:1.1,color:"#67e8f9",textTransform:"uppercase"}}>Transfers Hub</div>
+            <div style={{fontSize:30,fontWeight:800,lineHeight:1.1,marginTop:10,color:"#F8FAFC"}}>Securities transfer command center</div>
+            <div style={{fontSize:14,color:"#94A3B8",marginTop:10,lineHeight:1.6}}>Secure role-based workspace for Operations, Risk, AML, MO, and Trading with audit-ready approvals.</div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:12,padding:"10px 12px"}}>
+              <div style={{fontSize:18,fontWeight:800,color:"#f8fafc"}}>7</div>
+              <div style={{fontSize:11,color:"#94a3b8"}}>Workflow stages</div>
+            </div>
+            <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:12,padding:"10px 12px"}}>
+              <div style={{fontSize:18,fontWeight:800,color:"#f8fafc"}}>Role PIN</div>
+              <div style={{fontSize:11,color:"#94a3b8"}}>Protected access</div>
+            </div>
+          </div>
         </div>
-        <div style={{background:"#fff",border:"1px solid #E5E7EB",borderRadius:14,padding:24,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+
+        <div style={{flex:"1 1 340px",maxWidth:420,minWidth:300,background:"rgba(255,255,255,.9)",border:"1px solid #E2E8F0",borderRadius:20,padding:24,boxShadow:"0 20px 45px rgba(15,23,42,.16)",backdropFilter:"blur(6px)"}}>
+          <div style={{textAlign:"center",marginBottom:18}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0f766e",letterSpacing:.8,textTransform:"uppercase"}}>Welcome Back</div>
+            <div style={{fontSize:28,fontWeight:800,color:"#0f172a",letterSpacing:-.6,marginTop:3}}>Sign in</div>
+            <div style={{fontSize:13,color:"#64748B",marginTop:4}}>Access your role dashboard</div>
+          </div>
+
           {step==="email"&&(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <div style={{fontSize:13,fontWeight:600,color:"#374151",textAlign:"center"}}>Sign in to ACAT Out</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#334155",textAlign:"center"}}>Use your company email to continue</div>
               {error&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,padding:"8px 11px",fontSize:12,color:"#DC2626"}}>{error}</div>}
               <div>
                 <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:4}}>Company email</label>
-                <input autoFocus style={{width:"100%",border:"1px solid #E5E7EB",borderRadius:9,padding:"11px 12px",fontSize:13,boxSizing:"border-box"}} placeholder="you@etoro.com" value={email} onChange={function(e){setEmail(e.target.value);setError("");}} onKeyDown={function(e){if(e.key==="Enter")handleEmailNext();}}/>
+                <input autoFocus style={{width:"100%",border:"1px solid #CBD5E1",borderRadius:10,padding:"11px 12px",fontSize:13,boxSizing:"border-box",background:"#F8FAFC"}} placeholder="you@etoro.com" value={email} onChange={function(e){setEmail(e.target.value);setError("");}} onKeyDown={function(e){if(e.key==="Enter")handleEmailNext();}}/>
               </div>
-              <button onClick={handleEmailNext} style={{background:"#111827",color:"#fff",fontSize:14,fontWeight:600,border:"none",borderRadius:9,padding:"12px",cursor:"pointer"}}>Continue</button>
-              <div style={{fontSize:11,color:"#9CA3AF",textAlign:"center",lineHeight:1.6}}>Internal team members will be asked for their PIN. All other eToro emails get Requester access.</div>
-              <div style={{borderTop:"1px solid #F3F4F6",paddingTop:12,fontSize:11,color:"#9CA3AF"}}>
-                <div style={{fontWeight:600,marginBottom:6,color:"#6B7280"}}>Quick login (demo):</div>
+              <button onClick={handleEmailNext} style={{background:"linear-gradient(90deg,#0f766e,#0ea5a4)",color:"#fff",fontSize:14,fontWeight:700,border:"none",borderRadius:10,padding:"12px",cursor:"pointer",boxShadow:"0 8px 20px rgba(13,148,136,.24)"}}>Continue</button>
+              <div style={{fontSize:11,color:"#64748B",textAlign:"center",lineHeight:1.6}}>Team members authenticate with PIN. Other eToro emails enter with Requester access.</div>
+              <div style={{borderTop:"1px solid #E2E8F0",paddingTop:12,fontSize:11,color:"#9CA3AF"}}>
+                <div style={{fontWeight:700,marginBottom:6,color:"#475569"}}>Quick login (demo):</div>
                 {[["omar.p@etoro.com","Operations","1001"],["layla.m@etoro.com","AML","2001"],["chris.b@etoro.com","Middle Office","3001"],["james.h@etoro.com","Trading","4001"],["madonama@etoro.com","Admin","0000"]].map(function(u) {
                   return (
-                    <div key={u[0]} onClick={function(){setEmail(u[0]);}} style={{display:"flex",justifyContent:"space-between",padding:"4px 7px",borderRadius:6,cursor:"pointer",marginBottom:2,background:"#F9FAFB",border:"1px solid #F3F4F6"}}>
-                      <span style={{color:"#374151"}}>{u[0]}</span>
+                    <div key={u[0]} onClick={function(){setEmail(u[0]);}} style={{display:"flex",justifyContent:"space-between",padding:"4px 7px",borderRadius:7,cursor:"pointer",marginBottom:3,background:"#F8FAFC",border:"1px solid #E2E8F0"}}>
+                      <span style={{color:"#334155"}}>{u[0]}</span>
                       <span style={{color:ROLE_COLOR[u[1]]||"#374151",fontWeight:600,fontSize:10}}>{u[1]} - PIN: {u[2]}</span>
                     </div>
                   );
@@ -4948,16 +5116,16 @@ function LoginScreen(props) {
                     <button key={i} onClick={function() {
                       if(d==="<"){setPin(function(pp){return pp.slice(0,-1);});setError("");}
                       else{handlePinDigit(d);}
-                    }} style={{padding:"16px 0",fontSize:d==="<"?18:20,fontWeight:d==="<"?400:600,border:"1px solid #E5E7EB",borderRadius:10,background:"#F9FAFB",cursor:"pointer",color:"#111827"}}>{d}</button>
+                    }} style={{padding:"16px 0",fontSize:d==="<"?18:20,fontWeight:d==="<"?400:700,border:"1px solid #CBD5E1",borderRadius:10,background:"#F8FAFC",cursor:"pointer",color:"#0F172A"}}>{d}</button>
                   );
                 })}
               </div>
-              <div style={{fontSize:11,color:"#9CA3AF"}}>Type on keyboard or tap digits above.</div>
+              <div style={{fontSize:11,color:"#64748B"}}>Type on keyboard or tap digits above.</div>
             </div>
           )}
           {step==="name"&&matchedUser&&(
             <div style={{display:"flex",flexDirection:"column",gap:16,alignItems:"center"}}>
-              <div style={{width:48,height:48,borderRadius:"50%",background:"#16A34A",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>OK</div>
+              <div style={{width:48,height:48,borderRadius:"50%",background:"#0ea5a4",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:800}}>OK</div>
               <div style={{textAlign:"center"}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#111827"}}>PIN verified</div>
                 <div style={{fontSize:12,color:"#6B7280",marginTop:4}}>Enter your name for audit attribution.</div>
@@ -4965,10 +5133,10 @@ function LoginScreen(props) {
               {error&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,padding:"7px 12px",fontSize:12,color:"#DC2626",textAlign:"center",width:"100%",boxSizing:"border-box"}}>{error}</div>}
               <div style={{width:"100%"}}>
                 <label style={{fontSize:12,color:"#6B7280",display:"block",marginBottom:4}}>Your full name</label>
-                <input autoFocus style={{width:"100%",border:"1px solid #E5E7EB",borderRadius:9,padding:"11px 12px",fontSize:14,boxSizing:"border-box",textAlign:"center"}} placeholder="e.g. Sara Johnson" value={displayName} onChange={function(e){setDisplayName(e.target.value);setError("");}} onKeyDown={function(e){if(e.key==="Enter")handleNameSubmit();}}/>
+                <input autoFocus style={{width:"100%",border:"1px solid #CBD5E1",borderRadius:10,padding:"11px 12px",fontSize:14,boxSizing:"border-box",textAlign:"center",background:"#F8FAFC"}} placeholder="e.g. Sara Johnson" value={displayName} onChange={function(e){setDisplayName(e.target.value);setError("");}} onKeyDown={function(e){if(e.key==="Enter")handleNameSubmit();}}/>
               </div>
-              <button onClick={handleNameSubmit} style={{width:"100%",background:displayName.trim()?"#111827":"#D1D5DB",color:"#fff",fontSize:14,fontWeight:600,border:"none",borderRadius:9,padding:"12px",cursor:displayName.trim()?"pointer":"not-allowed"}}>Enter dashboard</button>
-              <div style={{fontSize:11,color:"#9CA3AF",textAlign:"center"}}>Signing in as {matchedUser.roles?matchedUser.roles.join(" + "):matchedUser.role}</div>
+              <button onClick={handleNameSubmit} style={{width:"100%",background:displayName.trim()?"linear-gradient(90deg,#0f766e,#0ea5a4)":"#CBD5E1",color:"#fff",fontSize:14,fontWeight:700,border:"none",borderRadius:10,padding:"12px",cursor:displayName.trim()?"pointer":"not-allowed"}}>Enter dashboard</button>
+              <div style={{fontSize:11,color:"#64748B",textAlign:"center"}}>Signing in as {matchedUser.roles?matchedUser.roles.join(" + "):matchedUser.role}</div>
             </div>
           )}
         </div>
@@ -4986,9 +5154,12 @@ function App() {
   var [cases,setCasesRaw]=useState(function(){
     try{
       var saved=localStorage.getItem("acatout_cases");
-      if(saved){var parsed=JSON.parse(saved);if(Array.isArray(parsed)&&parsed.length>0)return parsed;}
+      if(saved){
+        var parsed=JSON.parse(saved);
+        if(Array.isArray(parsed)&&parsed.length>0)return syncSanctionFlags(parsed);
+      }
     }catch(e){}
-    return SEED;
+    return syncSanctionFlags(SEED);
   });
 
   // Load permissions from localStorage, fall back to DEFAULT_PERMISSIONS
@@ -5004,6 +5175,7 @@ function App() {
   function setCases(updater){
     setCasesRaw(function(prev){
       var next=typeof updater==="function"?updater(prev):updater;
+      next=syncSanctionFlags(next);
       try{localStorage.setItem("acatout_cases",JSON.stringify(next));}catch(e){}
       return next;
     });
@@ -5079,7 +5251,7 @@ function App() {
       <div>
         {tab==="🏠 Home"    && <OverviewTab cases={cases} user={user}/>}
         {tab==="My Requests" && <MyRequestsTab cases={cases} setCases={setCases} user={user}/>}
-        {tab==="New Request" && <NewRequestTab cases={cases} setCases={setCases} user={user}/>}
+        {tab==="New Request" && <NewRequestTab cases={cases} setCases={setCases} user={user} permissions={permissions}/>}
         {tab==="My Queue"    && <QueueTab cases={cases} setCases={setCases} user={user} permissions={permissions}/>}
         {tab==="All Cases"   && <AllCasesTab cases={cases} setCases={setCases} user={user} permissions={permissions}/>}
         {tab==="Raw Data"    && <RawDataTab cases={cases} user={user}/>}
