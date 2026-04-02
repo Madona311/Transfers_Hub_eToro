@@ -3159,6 +3159,20 @@ function ExecOpsLoad(props) {
           </div>
         </div>
       )}
+      {p.execReady.length>0&&(
+        <div style={{border:"1px solid #C7D2FE",borderRadius:10,padding:"10px 14px",background:"#EEF2FF"}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#3730A3",marginBottom:6}}>Paste all positions once (auto-distribute by CID)</div>
+          <div style={{fontSize:10,color:"#6B7280",fontFamily:"monospace",background:"#fff",borderRadius:5,padding:"6px 9px",lineHeight:1.8,border:"1px solid #C7D2FE",marginBottom:8}}>
+            Format: CID / PositionID / InstrumentID / Asset name (tab-separated)
+          </div>
+          <textarea style={{width:"100%",minHeight:100,border:"1px solid #C7D2FE",borderRadius:8,padding:"7px 10px",fontSize:11,fontFamily:"monospace",boxSizing:"border-box"}} placeholder={"67234\t3093873742\t1003\tMeta Platforms Inc\n55129\t2088439301\t1005\tMicrosoft Corp"} value={p.opsBulkPaste} onChange={function(e){p.setOpsBulkPaste(e.target.value);}}/>
+          <div style={{display:"flex",gap:8,marginTop:8,alignItems:"center",flexWrap:"wrap"}}>
+            <button onClick={p.parseOpsBulkPaste} disabled={!p.opsBulkPaste.trim()} style={{background:p.opsBulkPaste.trim()?"#4F46E5":"#D1D5DB",color:"#fff",border:"none",borderRadius:7,padding:"6px 13px",fontSize:11,fontWeight:600,cursor:p.opsBulkPaste.trim()?"pointer":"not-allowed"}}>Parse and distribute</button>
+            <button onClick={function(){p.setOpsBulkPaste("");}} style={{background:"#fff",border:"1px solid #D1D5DB",borderRadius:7,padding:"6px 11px",fontSize:11,color:"#6B7280",cursor:"pointer"}}>Clear</button>
+            {p.opsParseInfo.message&&<span style={{fontSize:11,fontWeight:600,color:p.opsParseInfo.type==="error"?"#DC2626":"#166534"}}>{p.opsParseInfo.message}</span>}
+          </div>
+        </div>
+      )}
       {p.execReady.length===0&&<div style={{border:"1px dashed #E5E7EB",borderRadius:12,padding:36,textAlign:"center",color:"#9CA3AF"}}>No cases in execution queue yet</div>}
       {p.execReady.map(function(c) {
         var confirmed=p.opsConfirmed[c.id]; var pr=p.opsRows[c.id]||[]; var sa=SEED_ASSETS[c.id]||[];
@@ -3180,10 +3194,8 @@ function ExecOpsLoad(props) {
             </div>
             {!confirmed&&(
               <div style={{padding:"11px 14px",display:"flex",flexDirection:"column",gap:8}}>
-                <div style={{fontSize:10,color:"#9CA3AF",fontFamily:"monospace",background:"#F9FAFB",borderRadius:5,padding:"6px 9px",lineHeight:1.8}}>Paste: PositionID / InstrumentID / Asset name (tab-separated)</div>
-                <textarea style={{width:"100%",minHeight:90,border:"1px solid #C7D2FE",borderRadius:8,padding:"6px 9px",fontSize:11,fontFamily:"monospace",boxSizing:"border-box"}} placeholder={"3093873742\t1003\tMeta Platforms Inc"} value={p.opsPaste[c.id]||""} onChange={function(e){var v=e.target.value;p.setOpsPaste(function(prev){var n=cloneObj(prev);n[c.id]=v;return n;});}}/>
                 <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
-                  <button onClick={function(){p.parseOpsPaste(c.id,p.opsPaste[c.id]||"",c);}} disabled={!(p.opsPaste[c.id]&&p.opsPaste[c.id].trim())} style={{background:(p.opsPaste[c.id]&&p.opsPaste[c.id].trim())?"#7C3AED":"#D1D5DB",color:"#fff",border:"none",borderRadius:7,padding:"6px 13px",fontSize:11,fontWeight:600,cursor:(p.opsPaste[c.id]&&p.opsPaste[c.id].trim())?"pointer":"not-allowed"}}>Parse and filter</button>
+                  {pr.length===0&&<span style={{fontSize:11,color:"#6B7280"}}>No rows parsed yet for this CID. Use the shared paste box above.</span>}
                   {pr.length>0&&<button onClick={function(){p.confirmOps(c.id);}} style={{background:"#16A34A",color:"#fff",border:"none",borderRadius:7,padding:"6px 13px",fontSize:11,fontWeight:600,cursor:"pointer"}}>Send to MO for approval</button>}
                   {p.opsExcluded[c.id]>0&&<span style={{fontSize:11,color:"#EA580C",fontWeight:600,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:6,padding:"2px 8px"}}>{p.opsExcluded[c.id]} row{p.opsExcluded[c.id]!==1?"s":""} excluded</span>}
                 </div>
@@ -3330,7 +3342,8 @@ function ExecutionTab(props) {
   var [transferDates,setTransferDates]=useState({});
   var [savedDates,setSavedDates]=useState({});
   var [copied,setCopied]=useState(false);
-  var [opsPaste,setOpsPaste]=useState({});
+  var [opsBulkPaste,setOpsBulkPaste]=useState("");
+  var [opsParseInfo,setOpsParseInfo]=useState({type:"",message:""});
   var [opsRows,setOpsRows]=useState({});
   var [opsConfirmed,setOpsConfirmed]=useState({});
   var [opsExcluded,setOpsExcluded]=useState({});
@@ -3359,21 +3372,96 @@ function ExecutionTab(props) {
     if(found)setCases(function(prev){return patchCase(prev,found.id,{executionDate:d,status:"Execution Ready"});});
   }
 
-  function parseOpsPaste(caseId,text,c) {
-    var sa=SEED_ASSETS[caseId]||[];
-    var lines=text.trim().split("\n").filter(function(l){return l.trim();});
-    var parsed=lines.map(function(line,i) {
+  function parseOpsBulkPaste() {
+    setOpsParseInfo({type:"",message:""});
+    var lines=opsBulkPaste.trim().split("\n").filter(function(l){return l.trim();});
+    if(!lines.length){setOpsParseInfo({type:"error",message:"Nothing pasted."});return;}
+
+    var readyByCid={};
+    execReady.forEach(function(c){readyByCid[c.cid]=c;});
+
+    var nextRows={};
+    var nextExcluded={};
+    var parsedCount=0;
+    var dropped=0;
+
+    lines.forEach(function(line,li) {
       var cells=line.split("\t").map(function(x){return x.trim();});
-      return {id:Date.now()+i,rowNum:String(i+1),addedDate:c.executionDate||new Date().toLocaleDateString(),cid:c.cid,asset:cells[2]||"",instrumentID:cells[1]||"",positionID:cells[0]||"",units:"",forexRate:"",payment:"",tradingStatus:"New Request",moApproval:"Pending Approval",boStatus:"Pending"};
+      if(!cells.length)return;
+
+      var first=(cells[0]||"").toLowerCase();
+      if(li===0&&(first==="cid"||first==="case id"||first==="caseid"))return;
+
+      var targetCase=null;
+      var positionID="";
+      var instrumentID="";
+      var asset="";
+
+      if(cells.length>=4) {
+        targetCase=readyByCid[cells[0]]||null;
+        if(targetCase) {
+          positionID=cells[1]||"";
+          instrumentID=cells[2]||"";
+          asset=cells.slice(3).join(" ").trim();
+        }
+      }
+
+      if(!targetCase&&execReady.length===1&&cells.length>=3) {
+        targetCase=execReady[0];
+        positionID=cells[0]||"";
+        instrumentID=cells[1]||"";
+        asset=cells.slice(2).join(" ").trim();
+      }
+
+      if(!targetCase){dropped++;return;}
+
+      var sa=SEED_ASSETS[targetCase.id]||[];
+      var approvedAssets=sa.map(function(a){return a.name.toLowerCase();});
+      var assetLower=(asset||"").toLowerCase();
+      var allowed=!assetLower||approvedAssets.length===0||approvedAssets.some(function(a){return assetLower.includes(a)||a.includes(assetLower);});
+
+      if(!allowed) {
+        nextExcluded[targetCase.id]=(nextExcluded[targetCase.id]||0)+1;
+        dropped++;
+        return;
+      }
+
+      if(!nextRows[targetCase.id])nextRows[targetCase.id]=[];
+      var rowNum=String(nextRows[targetCase.id].length+1);
+      nextRows[targetCase.id].push({
+        id:Date.now()+parsedCount,
+        rowNum:rowNum,
+        addedDate:targetCase.executionDate||new Date().toLocaleDateString(),
+        cid:targetCase.cid,
+        asset:asset,
+        instrumentID:instrumentID,
+        positionID:positionID,
+        units:"",
+        forexRate:"",
+        payment:"",
+        tradingStatus:"New Request",
+        moApproval:"Pending Approval",
+        boStatus:"Pending"
+      });
+      parsedCount++;
     });
-    var approvedAssets=sa.map(function(a){return a.name.toLowerCase();});
-    var filtered=parsed.filter(function(r) {
-      if(!r.asset)return true;
-      return approvedAssets.length===0||approvedAssets.some(function(a){return r.asset.toLowerCase().includes(a)||a.includes(r.asset.toLowerCase());});
+
+    setOpsRows(function(prev){
+      var n=cloneObj(prev);
+      execReady.forEach(function(c){if(!opsConfirmed[c.id])delete n[c.id];});
+      Object.keys(nextRows).forEach(function(caseId){n[caseId]=nextRows[caseId];});
+      return n;
     });
-    var excluded=parsed.length-filtered.length;
-    setOpsRows(function(prev){var n=cloneObj(prev);n[caseId]=filtered;return n;});
-    setOpsExcluded(function(prev){var n=cloneObj(prev);n[caseId]=excluded;return n;});
+
+    setOpsExcluded(function(prev){
+      var n=cloneObj(prev);
+      execReady.forEach(function(c){if(!opsConfirmed[c.id])n[c.id]=0;});
+      Object.keys(nextExcluded).forEach(function(caseId){n[caseId]=nextExcluded[caseId];});
+      return n;
+    });
+
+    if(!parsedCount){setOpsParseInfo({type:"error",message:"No valid rows found. Use tab-separated columns: CID, PositionID, InstrumentID, Asset."});return;}
+    setOpsParseInfo({type:"success",message:parsedCount+" row"+(parsedCount!==1?"s":"")+" distributed"+(dropped?"; "+dropped+" excluded":"")+"."});
   }
 
   function confirmOps(caseId) {
@@ -3458,7 +3546,7 @@ function ExecutionTab(props) {
         })}
       </div>
       {view==="mo"&&<ExecMODates brokerConfirmed={brokerConfirmed} savedDates={savedDates} setSavedDates={setSavedDates} transferDates={transferDates} setTransferDates={setTransferDates} saveDate={saveDate} byDate={byDate} copied={copied} setCopied={setCopied}/>}
-      {view==="ops"&&<ExecOpsLoad execReady={execReady} cases={cases} setCases={setCases} opsPaste={opsPaste} setOpsPaste={setOpsPaste} opsRows={opsRows} opsConfirmed={opsConfirmed} opsExcluded={opsExcluded} parseOpsPaste={parseOpsPaste} confirmOps={confirmOps} copied={copied} setCopied={setCopied}/>}
+      {view==="ops"&&<ExecOpsLoad execReady={execReady} cases={cases} setCases={setCases} opsRows={opsRows} opsConfirmed={opsConfirmed} opsExcluded={opsExcluded} opsBulkPaste={opsBulkPaste} setOpsBulkPaste={setOpsBulkPaste} parseOpsBulkPaste={parseOpsBulkPaste} opsParseInfo={opsParseInfo} confirmOps={confirmOps} copied={copied} setCopied={setCopied}/>}
       {view==="mo-approve"&&<ExecMOApprove cases={cases} setCases={setCases} approveAllMO={approveAllMO}/>}
       {view==="trading"&&<ExecTrading cases={cases} setCases={setCases} usdPaste={usdPaste} setUsdPaste={setUsdPaste} usdError={usdError} setUsdError={setUsdError} usdFinalized={usdFinalized} setUsdFinalized={setUsdFinalized} applyUSDPaste={applyUSDPaste}/>}
       {view==="bo"&&<ExecBOStatus cases={cases} setCases={setCases}/>}
@@ -3733,10 +3821,8 @@ function ReportsTab(props) {
                     })()}
                   </div>
 
-                  <div style={{display:"flex",gap:8}}>
-                    <button
                       onClick={function(){
-                        if(customFrom||customTo){setPeriod("custom");}
+                          {pr.length===0&&<span style={{fontSize:11,color:"#6B7280"}}>No rows parsed yet for this CID. Use the shared paste box above.</span>}
                         setShowCustom(false);
                       }}
                       disabled={!customFrom&&!customTo}
