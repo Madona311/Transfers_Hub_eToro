@@ -873,6 +873,7 @@ function PositionsTable(props) {
         var newRows=c.execRows.map(function(r) {
           if(r.id!==rowId)return r;
           var nr=cloneObj(r); nr[field]=val;
+          if(field==="moApproval"&&val==="Approved")nr.units="";
           if(nr.units&&nr.forexRate&&nr.payment)nr.tradingStatus="Position Closed";
           return nr;
         });
@@ -3308,34 +3309,68 @@ function ExecTrading(props) {
     var lines=bulkPaste.trim().split("\n").filter(function(l){return l.trim();});
     if(!lines.length){setBulkInfo("Nothing pasted.");return;}
 
-    var first=lines[0].toLowerCase();
-    var data=(first.includes("units")&&first.includes("forex"))?lines.slice(1):lines;
+    function normHeader(h){return String(h||"").toLowerCase().replace(/[^a-z0-9]/g,"");}
+    var headerCells=lines[0].split("\t").map(function(x){return x.trim();});
+    var headerMap={};
+    headerCells.forEach(function(h,idx){headerMap[normHeader(h)]=idx;});
+    var hasHeader=headerMap.cid!==undefined&&headerMap.positionid!==undefined&&headerMap.units!==undefined&&(headerMap.endforexrate!==undefined||headerMap.forexrate!==undefined)&&(headerMap.paymenttoacct!==undefined||headerMap.payment!==undefined);
+    var data=hasHeader?lines.slice(1):lines;
 
-    var rowKeys=[];
     var updatesByCase={};
-    approvedRows.forEach(function(r){
-      rowKeys.push({caseId:r.caseId,rowId:r.id});
+    var updatesByKey={};
+
+    function cellByHeader(cells,name){
+      var i=headerMap[name];
+      return i===undefined?"":(cells[i]||"").trim();
+    }
+
+    data.forEach(function(line){
+      var cells=line.split("\t").map(function(x){return x.trim();});
+      if(!cells.length)return;
+
+      var cid="",positionID="",units="",forex="",payment="";
+
+      if(hasHeader){
+        cid=cellByHeader(cells,"cid");
+        positionID=cellByHeader(cells,"positionid");
+        units=cellByHeader(cells,"units");
+        forex=cellByHeader(cells,"endforexrate")||cellByHeader(cells,"forexrate");
+        payment=cellByHeader(cells,"paymenttoacct")||cellByHeader(cells,"payment");
+      } else if(cells.length>=5){
+        cid=cells[0]||"";
+        positionID=cells[1]||"";
+        units=cells[2]||"";
+        forex=cells[3]||"";
+        payment=cells[4]||"";
+      }
+
+      if(cid&&positionID&&(units||forex||payment)) {
+        updatesByKey[cid+"|"+positionID]={units:units,forexRate:forex,payment:payment};
+      }
     });
 
     var applied=0;
-    rowKeys.forEach(function(k,i){
-      if(!data[i])return;
-      var cells=data[i].split("\t").map(function(x){return x.trim();});
-      var units="",forex="",payment="";
-      if(cells.length>=8){
-        units=cells[5]||"";
-        forex=cells[6]||"";
-        payment=cells[7]||"";
-      } else {
-        units=cells[0]||"";
-        forex=cells[1]||"";
-        payment=cells[2]||"";
-      }
-      if(!(units||forex||payment))return;
-      if(!updatesByCase[k.caseId])updatesByCase[k.caseId]={};
-      updatesByCase[k.caseId][k.rowId]={units:units,forexRate:forex,payment:payment};
-      applied++;
-    });
+    if(Object.keys(updatesByKey).length>0){
+      approvedRows.forEach(function(r){
+        var u=updatesByKey[r.cid+"|"+r.positionID];
+        if(!u)return;
+        if(!updatesByCase[r.caseId])updatesByCase[r.caseId]={};
+        updatesByCase[r.caseId][r.id]=u;
+        applied++;
+      });
+    } else {
+      approvedRows.forEach(function(r,i){
+        if(!data[i])return;
+        var cells=data[i].split("\t").map(function(x){return x.trim();});
+        var units=cells[0]||"";
+        var forex=cells[1]||"";
+        var payment=cells[2]||"";
+        if(!(units||forex||payment))return;
+        if(!updatesByCase[r.caseId])updatesByCase[r.caseId]={};
+        updatesByCase[r.caseId][r.id]={units:units,forexRate:forex,payment:payment};
+        applied++;
+      });
+    }
 
     if(!applied){setBulkInfo("No valid rows to apply.");return;}
 
@@ -3392,8 +3427,8 @@ function ExecTrading(props) {
 
           <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:10}}>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              <div style={{fontSize:10,color:"#9CA3AF",background:"#F9FAFB",borderRadius:5,padding:"5px 9px"}}>Paste all rows: Units / End Forex Rate / Payment (tab-separated). Rows map by table order.</div>
-              <textarea style={{width:"100%",minHeight:90,border:"1px solid #C7D2FE",borderRadius:8,padding:"7px 10px",fontSize:11,fontFamily:"monospace",boxSizing:"border-box",resize:"vertical"}} placeholder={"2.609977\t592.92\t1547.51"} value={bulkPaste} onChange={function(e){setBulkPaste(e.target.value);setBulkInfo("");}}/>
+              <div style={{fontSize:10,color:"#9CA3AF",background:"#F9FAFB",borderRadius:5,padding:"5px 9px"}}>Paste all rows (tab-separated). Preferred: CID / PositionID / Units / End Forex Rate / Payment. Fallback: 3-column order by table.</div>
+              <textarea style={{width:"100%",minHeight:90,border:"1px solid #C7D2FE",borderRadius:8,padding:"7px 10px",fontSize:11,fontFamily:"monospace",boxSizing:"border-box",resize:"vertical"}} placeholder={"55129\t3363741768\t634\t592.92\t1547.51"} value={bulkPaste} onChange={function(e){setBulkPaste(e.target.value);setBulkInfo("");}}/>
               <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
                 <button onClick={applyBulkPaste} disabled={!bulkPaste.trim()} style={{background:bulkPaste.trim()?"#4338CA":"#D1D5DB",color:"#fff",border:"none",borderRadius:7,padding:"6px 14px",fontSize:11,fontWeight:600,cursor:bulkPaste.trim()?"pointer":"not-allowed"}}>Apply to all</button>
                 <button onClick={function(){setBulkPaste("");setBulkInfo("");}} style={{background:"#fff",border:"1px solid #E5E7EB",borderRadius:7,padding:"6px 12px",fontSize:11,cursor:"pointer",color:"#6B7280"}}>Clear</button>
@@ -3589,7 +3624,6 @@ function ExecutionTab(props) {
       var positionID="";
       var instrumentID="";
       var asset="";
-      var units="";
 
       function cellByHeader(name){
         var i=headerMap[name];
@@ -3603,7 +3637,6 @@ function ExecutionTab(props) {
           positionID=cellByHeader("positionid");
           instrumentID=cellByHeader("instrumentid");
           asset=cellByHeader("instrument")||cellByHeader("asset")||cellByHeader("assetname");
-          units=cellByHeader("amountinunitsdecimal")||"";
         }
       }
 
@@ -3646,7 +3679,7 @@ function ExecutionTab(props) {
         asset:asset,
         instrumentID:instrumentID,
         positionID:positionID,
-        units:units,
+        units:"",
         forexRate:"",
         payment:"",
         tradingStatus:"New Request",
@@ -3686,7 +3719,7 @@ function ExecutionTab(props) {
       return prev.map(function(c) {
         if(c.id!==caseId)return c;
         var newRows=c.execRows.map(function(r) {
-          return {id:r.id,rowNum:r.rowNum,addedDate:r.addedDate,cid:r.cid,asset:r.asset,instrumentID:r.instrumentID,positionID:r.positionID,units:r.units,forexRate:r.forexRate,payment:r.payment,tradingStatus:r.tradingStatus||"New Request",moApproval:"Approved",boStatus:r.boStatus||"Pending"};
+          return {id:r.id,rowNum:r.rowNum,addedDate:r.addedDate,cid:r.cid,asset:r.asset,instrumentID:r.instrumentID,positionID:r.positionID,units:"",forexRate:r.forexRate,payment:r.payment,tradingStatus:r.tradingStatus||"New Request",moApproval:"Approved",boStatus:r.boStatus||"Pending"};
         });
         var n=cloneObj(c); n.execRows=newRows; return n;
       });
