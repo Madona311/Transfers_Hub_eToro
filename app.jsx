@@ -4708,28 +4708,34 @@ function ClientTrackingPage(props){
 
   var statusLabel=(c.status==="Pending Ops"||c.status==="Pending AML")?"Under review":c.status;
 
-  var opsMissing=[];
-  if(c.status==="Pending Ops"){
-    var opsChecks=[
-      ["accountNormal","Please verify your account details"],
-      ["cashOk","Please ensure required account balance is available"],
-      ["formComplete","Please complete or re-submit the transfer form"],
-      ["fullStockOut","Please confirm all requested positions are included"],
-      ["proofOwnership","Please provide proof of account ownership"],
-      ["nwaZero","Please clear any pending account adjustments"],
-      ["lockedZero","Please remove any account restrictions/holds"],
-      ["w8Ok","Please provide the required tax form" ]
-    ];
-    opsChecks.forEach(function(ch){if(c[ch[0]]===false)opsMissing.push(ch[1]);});
-  }
+  var locationMap={
+    "Submitted":"Request received and queued for initial review",
+    "Pending Ops":"Operations review in progress",
+    "Pending AML":"Compliance (AML) review in progress",
+    "Broker Outreach":"Broker coordination in progress",
+    "Execution Ready":"Approved and waiting for execution window",
+    "Executing":"Execution in progress",
+    "Completed - Waiting Transfer":"Execution completed, final transfer confirmation pending",
+    "Completed":"Completed",
+    "Returned to Requester":"Action required from requester",
+    "AML Review Pending":"Additional information requested by compliance",
+    "Rejected":"Request closed"
+  };
+  var currentLocation=locationMap[c.status]||"In processing";
 
-  var latestMsg="Request is being processed.";
-  if(c.status==="Pending Ops"&&opsMissing.length){
-    latestMsg="Under review. Please complete the following to continue:";
-  }else if(c.status==="Pending Ops"||c.status==="Pending AML"){
-    latestMsg="Under review by the operations/compliance team.";
-  }else if(c.notes&&c.notes.length){
-    latestMsg=c.notes[c.notes.length-1].text;
+  var missingItems=[];
+  var clientChecks=[
+    ["accountNormal","Verify account details"],
+    ["cashOk","Ensure required account balance is available"],
+    ["formComplete","Complete or re-submit the transfer form"],
+    ["fullStockOut","Confirm all requested positions are included"],
+    ["proofOwnership","Provide proof of account ownership"],
+    ["nwaZero","Clear pending account adjustments"],
+    ["lockedZero","Remove account restrictions/holds"],
+    ["w8Ok","Provide required tax form"]
+  ];
+  if(c.status==="Pending Ops"||c.status==="Returned to Requester"||c.status==="AML Review Pending"){
+    clientChecks.forEach(function(ch){if(c[ch[0]]===false)missingItems.push(ch[1]);});
   }
 
   var latestDate=(c.notes&&c.notes.length)?c.notes[c.notes.length-1].date:(c.submittedDate||"");
@@ -4751,21 +4757,24 @@ function ClientTrackingPage(props){
         <div style={{fontSize:11,color:"#6B7280",marginBottom:16}}>Progress {progress}%</div>
 
         <div style={{border:"1px solid #E5E7EB",borderRadius:10,padding:12,background:"#FAFAFA"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:6}}>Latest update</div>
-          <div style={{fontSize:12,color:"#374151"}}>{latestMsg}</div>
-          {c.status==="Pending Ops"&&opsMissing.length>0&&(
-            <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:10}}>
-              {opsMissing.map(function(item,i){
-                return (
-                  <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px"}}>
-                    <span style={{fontSize:12,color:"#C2410C",lineHeight:1.3}}>•</span>
-                    <span style={{fontSize:12,color:"#9A3412",lineHeight:1.4}}>{item}</span>
-                  </div>
-                );
-              })}
+          <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:6}}>Current location</div>
+          <div style={{fontSize:12,color:"#111827",fontWeight:600}}>{currentLocation}</div>
+          {(c.status==="Pending Ops"||c.status==="Returned to Requester"||c.status==="AML Review Pending")&&missingItems.length>0&&(
+            <div style={{marginTop:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#9A3412",marginBottom:6}}>Action needed</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {missingItems.map(function(item,i){
+                  return (
+                    <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px"}}>
+                      <span style={{fontSize:12,color:"#C2410C",lineHeight:1.3}}>•</span>
+                      <span style={{fontSize:12,color:"#9A3412",lineHeight:1.4}}>{item}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
-          <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>{latestDate}</div>
+          <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>Last refreshed: {latestDate}</div>
         </div>
       </div>
     </div>
