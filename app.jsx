@@ -3870,8 +3870,10 @@ function ReportsTab(props) {
                     })()}
                   </div>
 
+                  <div style={{display:"flex",gap:8}}>
+                    <button
                       onClick={function(){
-                          {pr.length===0&&<span style={{fontSize:11,color:"#6B7280"}}>No rows parsed yet for this CID. Use the shared paste box above.</span>}
+                        setPeriod("custom");
                         setShowCustom(false);
                       }}
                       disabled={!customFrom&&!customTo}
