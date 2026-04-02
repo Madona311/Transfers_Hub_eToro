@@ -336,7 +336,7 @@ var TAB_MAP = {
   AML:["🏠 Home","My Queue","All Cases","Raw Data"],
   "Middle Office":["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution"],
   Trading:["🏠 Home","Raw Data","Execution"],
-  Admin:["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution","Reports","Permissions"]
+  Admin:["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution","Reports","QR Pilot","Permissions"]
 };
 
 // All tabs across all roles for the extraTabs picker
@@ -4663,6 +4663,126 @@ function PermissionManager(props) {
   );
 }
 
+function encodeTrackingToken(caseId){
+  try{
+    var raw="th:"+caseId;
+    return btoa(raw).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/," ").trim();
+  }catch(e){return "";}
+}
+
+function decodeTrackingToken(token){
+  try{
+    var t=String(token||"").replace(/-/g,"+").replace(/_/g,"/").trim();
+    while(t.length%4)t+="=";
+    var raw=atob(t);
+    if(raw.indexOf("th:")!==0)return null;
+    return raw.slice(3);
+  }catch(e){return null;}
+}
+
+function buildTrackingLink(caseId){
+  if(!caseId)return "";
+  var token=encodeTrackingToken(caseId);
+  if(!token)return "";
+  var base=window.location.origin+window.location.pathname;
+  return base+"?track="+encodeURIComponent(token);
+}
+
+function ClientTrackingPage(props){
+  var c=props.caseData;
+  if(!c){
+    return (
+      <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F9FAFB",fontFamily:"system-ui,sans-serif",padding:20}}>
+        <div style={{maxWidth:520,width:"100%",background:"#fff",border:"1px solid #E5E7EB",borderRadius:14,padding:24,textAlign:"center"}}>
+          <div style={{fontSize:20,fontWeight:800,color:"#111827",marginBottom:8}}>Transfers Hub Tracking</div>
+          <div style={{fontSize:13,color:"#DC2626",fontWeight:700}}>Invalid or expired tracking link.</div>
+        </div>
+      </div>
+    );
+  }
+
+  var simpleStages=["Submitted","Pending Ops","Pending AML","Broker Outreach","Execution Ready","Executing","Completed - Waiting Transfer","Completed"];
+  var idx=simpleStages.indexOf(c.status);
+  if(idx<0)idx=0;
+  var progress=Math.max(8,Math.min(100,Math.round(((idx+1)/simpleStages.length)*100)));
+
+  return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F9FAFB",fontFamily:"system-ui,sans-serif",padding:20}}>
+      <div style={{maxWidth:620,width:"100%",background:"#fff",border:"1px solid #E5E7EB",borderRadius:14,padding:24}}>
+        <div style={{fontSize:22,fontWeight:800,color:"#111827",marginBottom:4}}>Transfers Hub Tracking</div>
+        <div style={{fontSize:12,color:"#9CA3AF",marginBottom:14}}>Testing phase client view - minimal status only</div>
+
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151"}}>Request {c.id}</div>
+          <span style={bs(c.status)}>{c.status}</span>
+        </div>
+
+        <div style={{height:10,background:"#F3F4F6",borderRadius:99,overflow:"hidden",marginBottom:7}}>
+          <div style={{height:"100%",width:progress+"%",background:"linear-gradient(90deg,#2563EB,#22C55E)"}}/>
+        </div>
+        <div style={{fontSize:11,color:"#6B7280",marginBottom:16}}>Progress {progress}%</div>
+
+        <div style={{border:"1px solid #E5E7EB",borderRadius:10,padding:12,background:"#FAFAFA"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:6}}>Latest update</div>
+          <div style={{fontSize:12,color:"#374151"}}>{(c.notes&&c.notes.length)?c.notes[c.notes.length-1].text:"Request is being processed."}</div>
+          <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>{(c.notes&&c.notes.length)?c.notes[c.notes.length-1].date:(c.submittedDate||"")}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QRPilotTab(props){
+  var cases=props.cases;
+  var [active,setActive]=useState(null);
+  var [copied,setCopied]=useState("");
+
+  function copyLink(link,id){
+    if(!link||!navigator.clipboard)return;
+    navigator.clipboard.writeText(link);
+    setCopied(id);
+    setTimeout(function(){setCopied("");},1800);
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12,maxWidth:900}}>
+      <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:10,padding:"11px 14px",fontSize:12,color:"#1E40AF",lineHeight:1.7}}>
+        Pilot mode for managers: generate a QR that opens a minimal tracking page. No financials, assets, CID, or internal notes list are exposed.
+      </div>
+      {cases.map(function(c){
+        var link=buildTrackingLink(c.id);
+        var qr="https://api.qrserver.com/v1/create-qr-code/?size=170x170&data="+encodeURIComponent(link);
+        var isOpen=active===c.id;
+        return (
+          <div key={c.id} style={{border:"1px solid #E5E7EB",borderRadius:12,background:"#fff",overflow:"hidden"}}>
+            <div style={{padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:"#111827"}}>{c.clientName}</div>
+                <div style={{fontSize:11,color:"#9CA3AF",fontFamily:"monospace"}}>{c.id}</div>
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={bs(c.status)}>{c.status}</span>
+                <button onClick={function(){copyLink(link,c.id);}} style={{fontSize:11,fontWeight:600,background:"#2563EB",color:"#fff",border:"none",borderRadius:7,padding:"6px 12px",cursor:"pointer"}}>{copied===c.id?"Copied":"Copy link"}</button>
+                <button onClick={function(){setActive(isOpen?null:c.id);}} style={{fontSize:11,fontWeight:600,background:"#fff",color:"#374151",border:"1px solid #D1D5DB",borderRadius:7,padding:"6px 12px",cursor:"pointer"}}>{isOpen?"Hide QR":"Show QR"}</button>
+              </div>
+            </div>
+            {isOpen&&(
+              <div style={{borderTop:"1px solid #E5E7EB",padding:"12px 14px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+                <img src={qr} alt={"QR for "+c.id} width={170} height={170} style={{border:"1px solid #E5E7EB",borderRadius:8,background:"#fff"}}/>
+                <div style={{flex:1,minWidth:280}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:6}}>Share this pilot link with managers</div>
+                  <input readOnly value={link} style={{width:"100%",border:"1px solid #E5E7EB",borderRadius:8,padding:"8px 10px",fontSize:11,boxSizing:"border-box",color:"#374151"}}/>
+                  <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>Testing-only token. Final production should use signed expiring backend tokens.</div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function LoginScreen(props) {
   var onLogin=props.onLogin; var permissions=props.permissions;
   var [email,setEmail]=useState("");
@@ -4833,6 +4953,23 @@ function App() {
   }
   // ─────────────────────────────────────────────────────────────
 
+  var trackingView=useMemo(function(){
+    try{
+      var search=new URLSearchParams(window.location.search||"");
+      var tk=search.get("track");
+      if(!tk)return {enabled:false,caseData:null};
+      var caseId=decodeTrackingToken(tk);
+      if(!caseId)return {enabled:true,caseData:null};
+      var found=null;
+      for(var i=0;i<cases.length;i++){if(cases[i].id===caseId){found=cases[i];break;}}
+      return {enabled:true,caseData:found};
+    }catch(e){
+      return {enabled:false,caseData:null};
+    }
+  },[cases]);
+
+  if(trackingView.enabled)return <ClientTrackingPage caseData={trackingView.caseData}/>;
+
   function handleLogin(u) {
     var fresh=null;
     for(var i=0;i<permissions.length;i++){if(permissions[i].email.toLowerCase()===u.email.toLowerCase()){fresh=permissions[i];break;}}
@@ -4884,6 +5021,7 @@ function App() {
         {tab==="Raw Data"    && <RawDataTab cases={cases} user={user}/>}
         {tab==="Execution"   && <ExecutionTab cases={cases} setCases={setCases}/>}
         {tab==="Reports"     && <ReportsTab cases={cases}/>}
+        {tab==="QR Pilot"    && <QRPilotTab cases={cases}/>}
         {tab==="Permissions" && <PermissionManager permissions={permissions} setPermissions={setPermissions}/>}
       </div>
     </div>
