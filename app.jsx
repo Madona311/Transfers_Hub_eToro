@@ -1035,6 +1035,7 @@ function FormDataPanel(props) {
   var isCBO=(c.transferType||"NCBO")==="CBO";
   var hasSig=c.formSigned;
   var isMO=user&&user.role==="Middle Office";
+  var isOps=user&&user.role==="Operations";
 
   function setAssetField(idx,field,val){
     setCases&&setCases(function(prev){
@@ -1045,6 +1046,73 @@ function FormDataPanel(props) {
         var map=cloneObj(x[mapKey]||{});
         map[idx]=val;
         n[mapKey]=map;
+        return n;
+      });
+    });
+  }
+
+  function setOpsAssetField(idx,field,val){
+    if(!isOps||!setCases)return;
+    setCases(function(prev){
+      return prev.map(function(x){
+        if(x.id!==c.id)return x;
+        var n=cloneObj(x);
+        var base=(x.formAssets&&x.formAssets.length?x.formAssets:(SEED_ASSETS[x.id]||[])).map(function(a){
+          return {
+            symbol:(a&&a.symbol)||"",
+            name:(a&&a.name)||"",
+            qty:(a&&a.qty)||"",
+            exchange:(a&&a.exchange)||""
+          };
+        });
+        if(!base.length)base=[{symbol:"",name:"",qty:"",exchange:""}];
+        while(base.length<=idx)base.push({symbol:"",name:"",qty:"",exchange:""});
+        var row=cloneObj(base[idx]);
+        row[field]=val;
+        base[idx]=row;
+        n.formAssets=base;
+        n.instruments=base.filter(function(r){return (r.symbol||"").trim()&&(r.name||"").trim()&&(r.qty||"").trim();}).length||x.instruments;
+        return n;
+      });
+    });
+  }
+  function addOpsAssetRow(){
+    if(!isOps||!setCases)return;
+    setCases(function(prev){
+      return prev.map(function(x){
+        if(x.id!==c.id)return x;
+        var n=cloneObj(x);
+        var base=(x.formAssets&&x.formAssets.length?x.formAssets:(SEED_ASSETS[x.id]||[])).map(function(a){
+          return {
+            symbol:(a&&a.symbol)||"",
+            name:(a&&a.name)||"",
+            qty:(a&&a.qty)||"",
+            exchange:(a&&a.exchange)||""
+          };
+        });
+        base.push({symbol:"",name:"",qty:"",exchange:""});
+        n.formAssets=base;
+        return n;
+      });
+    });
+  }
+  function removeOpsAssetRow(idx){
+    if(!isOps||!setCases)return;
+    setCases(function(prev){
+      return prev.map(function(x){
+        if(x.id!==c.id)return x;
+        var n=cloneObj(x);
+        var base=(x.formAssets&&x.formAssets.length?x.formAssets:(SEED_ASSETS[x.id]||[])).map(function(a){
+          return {
+            symbol:(a&&a.symbol)||"",
+            name:(a&&a.name)||"",
+            qty:(a&&a.qty)||"",
+            exchange:(a&&a.exchange)||""
+          };
+        });
+        if(base.length<=1)n.formAssets=[{symbol:"",name:"",qty:"",exchange:""}];
+        else n.formAssets=base.filter(function(_,i){return i!==idx;});
+        n.instruments=(n.formAssets||[]).filter(function(r){return (r.symbol||"").trim()&&(r.name||"").trim()&&(r.qty||"").trim();}).length||x.instruments;
         return n;
       });
     });
@@ -1067,12 +1135,13 @@ function FormDataPanel(props) {
           return <div key={pair[0]} style={{background:"#fff",borderRadius:8,padding:"8px 10px",border:"1px solid "+(warn?"#FCA5A5":"#E0E7FF")}}><div style={{fontSize:9,color:"#9CA3AF",fontWeight:600,textTransform:"uppercase",marginBottom:2}}>{pair[0]}</div><div style={{fontSize:12,fontWeight:600,color:warn?"#DC2626":"#111827"}}>{pair[1]||"--"}</div></div>;
         })}
       </div>
-      {assets.length>0?(
+      {assets.length>0||isOps?(
         <div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
             <div style={{fontSize:11,fontWeight:700,color:"#4338CA"}}>Assets requested — {assets.length} instrument{assets.length!==1?"s":""}</div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               {isMO&&<span style={{fontSize:10,color:"#2563EB",background:"#DBEAFE",borderRadius:99,padding:"2px 9px",fontWeight:600}}>✏ Instrument ID &amp; ISIN editable</span>}
+              {isOps&&<span style={{fontSize:10,color:"#7C3AED",background:"#F3E8FF",borderRadius:99,padding:"2px 9px",fontWeight:600}}>✏ Asset rows editable</span>}
               <div style={{fontSize:11,fontWeight:700,color:"#DC2626",background:"#FEF2F2",borderRadius:99,padding:"2px 10px",border:"1px solid #FCA5A5"}}>Total fee: ${assets.length*100}</div>
             </div>
           </div>
@@ -1080,14 +1149,14 @@ function FormDataPanel(props) {
             <table style={{borderCollapse:"collapse",width:"100%",fontSize:11}}>
               <thead>
                 <tr style={{background:"#EEF2FF"}}>
-                  {["#","Symbol","Security name","Reference","Qty","Exchange","Instrument ID","ISIN"].map(function(h){
+                  {["#","Symbol","Security name","Reference","Qty","Exchange","Instrument ID","ISIN"].concat(isOps?["Actions"]:[]).map(function(h){
                     var isMOCol=h==="Instrument ID"||h==="ISIN";
                     return <th key={h} style={{padding:"6px 10px",textAlign:"left",fontWeight:700,color:isMOCol?"#2563EB":"#4338CA",borderBottom:"1px solid #C7D2FE",whiteSpace:"nowrap",background:isMOCol?"#EFF6FF":"#EEF2FF"}}>{h}{isMO&&isMOCol?" ✏":""}</th>;
                   })}
                 </tr>
               </thead>
               <tbody>
-                {assets.map(function(a,i){
+                {(assets.length?assets:[{symbol:"",name:"",qty:"",exchange:""}]).map(function(a,i){
                   var baseRef=c.opsReference||c.compensationNote||"ACATSOUT";
                   var refNum=parseInt(baseRef.replace(/[^0-9]/g,""))||500;
                   var refPrefix=baseRef.replace(/[0-9]+$/,"");
@@ -1097,23 +1166,49 @@ function FormDataPanel(props) {
                   return (
                     <tr key={i} style={{background:i%2?"#F8FAFF":"#fff",borderBottom:"1px solid #E0E7FF"}}>
                       <td style={{padding:"6px 10px",color:"#9CA3AF"}}>{i+1}</td>
-                      <td style={{padding:"6px 10px",fontWeight:800,fontFamily:"monospace",color:"#4338CA",fontSize:12}}>{a.symbol}</td>
-                      <td style={{padding:"6px 10px",fontWeight:600,color:"#111827"}}>{a.name}</td>
+                      <td style={{padding:"4px 6px"}}>
+                        {isOps
+                          ?<input value={a.symbol||""} onChange={function(e){setOpsAssetField(i,"symbol",e.target.value.toUpperCase());}} placeholder="e.g. AAPL" style={{border:"1px solid #C7D2FE",borderRadius:6,padding:"3px 7px",fontSize:11,width:90,fontFamily:"monospace",background:"#fff"}}/>
+                          :<span style={{fontWeight:800,fontFamily:"monospace",color:"#4338CA",fontSize:12}}>{a.symbol}</span>}
+                      </td>
+                      <td style={{padding:"4px 6px"}}>
+                        {isOps
+                          ?<input value={a.name||""} onChange={function(e){setOpsAssetField(i,"name",e.target.value);}} placeholder="Security name" style={{border:"1px solid #C7D2FE",borderRadius:6,padding:"3px 7px",fontSize:11,width:180,background:"#fff"}}/>
+                          :<span style={{padding:"0 4px",display:"inline-block",fontWeight:600,color:"#111827"}}>{a.name}</span>}
+                      </td>
                       <td style={{padding:"6px 10px",fontFamily:"monospace",fontSize:11,fontWeight:700,color:"#5B21B6",background:"#EDE9FE",whiteSpace:"nowrap"}}>{assetRef}</td>
-                      <td style={{padding:"6px 10px",textAlign:"right",fontWeight:700,color:"#1D4ED8"}}>{a.qty}</td>
-                      <td style={{padding:"6px 10px",color:"#6B7280"}}>{a.exchange}</td>
+                      <td style={{padding:"4px 6px"}}>
+                        {isOps
+                          ?<input type="number" value={a.qty||""} onChange={function(e){setOpsAssetField(i,"qty",e.target.value);}} placeholder="Qty" style={{border:"1px solid #C7D2FE",borderRadius:6,padding:"3px 7px",fontSize:11,width:80,textAlign:"right",background:"#fff"}}/>
+                          :<span style={{display:"inline-block",width:"100%",textAlign:"right",fontWeight:700,color:"#1D4ED8",paddingRight:4}}>{a.qty}</span>}
+                      </td>
+                      <td style={{padding:"4px 6px"}}>
+                        {isOps
+                          ?<input value={a.exchange||""} onChange={function(e){setOpsAssetField(i,"exchange",e.target.value.toUpperCase());}} placeholder="Exchange" style={{border:"1px solid #C7D2FE",borderRadius:6,padding:"3px 7px",fontSize:11,width:90,background:"#fff"}}/>
+                          :<span style={{padding:"0 4px",display:"inline-block",color:"#6B7280"}}>{a.exchange}</span>}
+                      </td>
                       <td style={{padding:"4px 6px",background:"#EFF6FF"}}>
                         {isMO?<input style={{border:"1px solid #BFDBFE",borderRadius:6,padding:"3px 7px",fontSize:11,width:90,fontFamily:"monospace",background:"#fff"}} placeholder="e.g. 1003" value={instrID} onChange={function(e){setAssetField(i,"instrumentID",e.target.value);}}/>:<span style={{fontFamily:"monospace",fontSize:11,color:instrID?"#1D4ED8":"#D1D5DB"}}>{instrID||"—"}</span>}
                       </td>
                       <td style={{padding:"4px 6px",background:"#EFF6FF"}}>
                         {isMO?<input style={{border:"1px solid #BFDBFE",borderRadius:6,padding:"3px 7px",fontSize:11,width:120,fontFamily:"monospace",background:"#fff"}} placeholder="e.g. US0231351067" value={isin} onChange={function(e){setAssetField(i,"isin",e.target.value);}}/>:<span style={{fontFamily:"monospace",fontSize:11,color:isin?"#1D4ED8":"#D1D5DB"}}>{isin||"—"}</span>}
                       </td>
+                      {isOps&&(
+                        <td style={{padding:"4px 6px"}}>
+                          <button onClick={function(){removeOpsAssetRow(i);}} style={{fontSize:10,border:"1px solid #FCA5A5",background:"#FEF2F2",color:"#DC2626",borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>Remove</button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          {isOps&&(
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:7}}>
+              <button onClick={addOpsAssetRow} style={{fontSize:11,fontWeight:700,border:"1px solid #C7D2FE",borderRadius:7,padding:"5px 11px",cursor:"pointer",background:"#EEF2FF",color:"#4338CA"}}>+ Add asset row</button>
+            </div>
+          )}
           <div style={{marginTop:8,fontSize:10,color:"#6B7280",fontStyle:"italic"}}>Data from the Securities Out Form. Instrument ID &amp; ISIN filled by Middle Office.</div>
         </div>
       ):(
@@ -2590,6 +2685,55 @@ function NewRequestTab(props) {
 
   function setField(name,val){setForm(function(f){var n=cloneObj(f);n[name]=val;return n;});}
 
+  function blankAssetRow(){return {symbol:"",name:"",qty:"",exchange:""};}
+  function normalizeAssetRow(a){
+    return {
+      symbol:String((a&&a.symbol)||"").trim().toUpperCase(),
+      name:String((a&&a.name)||"").trim(),
+      qty:String((a&&a.qty)||"").trim(),
+      exchange:String((a&&a.exchange)||"").trim().toUpperCase()
+    };
+  }
+  function isValidAssetRow(a){
+    var r=normalizeAssetRow(a);
+    return !!(r.symbol&&r.name&&r.qty&&!isNaN(Number(r.qty))&&Number(r.qty)>0);
+  }
+  function getValidAssets(){
+    return (form.assets||[]).map(normalizeAssetRow).filter(function(a){return isValidAssetRow(a);});
+  }
+  function setAssetField(idx,field,val){
+    setForm(function(f){
+      var n=cloneObj(f);
+      var rows=(n.assets||[]).slice();
+      while(rows.length<=idx)rows.push(blankAssetRow());
+      var row=normalizeAssetRow(rows[idx]);
+      row[field]=field==="symbol"||field==="exchange"?String(val||"").toUpperCase():val;
+      rows[idx]=row;
+      n.assets=rows;
+      n.instruments=rows.filter(function(r){return isValidAssetRow(r);}).length||"";
+      return n;
+    });
+    setFormErrors([]);
+  }
+  function addAssetRow(){
+    setForm(function(f){
+      var n=cloneObj(f);
+      n.assets=(n.assets||[]).slice().concat([blankAssetRow()]);
+      return n;
+    });
+  }
+  function removeAssetRow(idx){
+    setForm(function(f){
+      var n=cloneObj(f);
+      var rows=(n.assets||[]).slice();
+      if(rows.length<=1)rows=[blankAssetRow()];
+      else rows=rows.filter(function(_,i){return i!==idx;});
+      n.assets=rows;
+      n.instruments=rows.filter(function(r){return isValidAssetRow(r);}).length||"";
+      return n;
+    });
+  }
+
   function getMissingRequiredFields(){
     var missing=[];
     function hasText(v){return !!(v&&String(v).trim());}
@@ -2604,7 +2748,7 @@ function NewRequestTab(props) {
     if(!hasText(form.requesterAccountNumber))missing.push("Requester account number");
     if(!hasText(form.formFile))missing.push("Securities Out Form (PDF)");
     if(!hasText(form.proofFile))missing.push("Proof of Ownership");
-    if(!(form.assets&&form.assets.length>0))missing.push("Assets to transfer");
+    if(getValidAssets().length===0)missing.push("Assets to transfer (at least one complete row)");
     if(form.formSigned===false)missing.push("Signed form");
     if(!feeAware)missing.push("Fee acknowledgement");
     if(user.role==="Admin"&&hasText(form.manualRequesterEmail)&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.manualRequesterEmail.trim())){
@@ -3013,10 +3157,11 @@ function NewRequestTab(props) {
       return;
     }
     setFormErrors([]);
-    var numInstr=form.assets&&form.assets.length>0?form.assets.length:(Number(form.instruments)||1);
-    var hasSanctioned=(form.assets&&form.assets.length)?form.assets.some(function(a){
+    var cleanAssets=getValidAssets();
+    var numInstr=cleanAssets.length||1;
+    var hasSanctioned=cleanAssets.some(function(a){
       return isSanctionedAssetName((a&&a.name)||"")||isSanctionedAssetName((a&&a.symbol)||"");
-    }):false;
+    });
     var submittedByEmail=user.email;
     var submittedByName=user.name;
     if(user.role==="Admin"&&form.manualRequesterEmail&&form.manualRequesterEmail.trim()){
@@ -3034,7 +3179,7 @@ function NewRequestTab(props) {
         brokerEmail:form.brokerEmail,
         requesterAccountName:form.requesterAccountName,
         requesterAccountNumber:form.requesterAccountNumber,
-        formAssets:form.assets,
+        formAssets:cleanAssets,
         formSigned:form.formSigned,
         opsSanctionStock:hasSanctioned,
         riskTriggered:hasSanctioned,
@@ -3054,10 +3199,11 @@ function NewRequestTab(props) {
     setTimeout(function(){setSubmitted(false);},4000);
   }
 
-  var numAssets=form.assets&&form.assets.length>0?form.assets.length:(Number(form.instruments)||0);
+  var validAssets=getValidAssets();
+  var numAssets=validAssets.length;
   var totalFee=numAssets*100;
   var sigOk=form.formSigned!==false;   // null (not parsed yet) = allow; false = block
-  var hasSanctionedAtSubmission=(form.assets&&form.assets.length)?form.assets.some(function(a){
+  var hasSanctionedAtSubmission=(validAssets&&validAssets.length)?validAssets.some(function(a){
     return isSanctionedAssetName((a&&a.name)||"")||isSanctionedAssetName((a&&a.symbol)||"");
   }):false;
   var canSubmit=getMissingRequiredFields().length===0;
@@ -3261,46 +3407,56 @@ function NewRequestTab(props) {
       {/* ── STEP 4 — Assets  (Green) ── */}
       <div style={{border:"2px solid #86EFAC",borderRadius:14,padding:18,background:"#F0FDF4"}}>
         <StepHeader n={4} label="Assets to transfer" color="#16A34A" badge="Form page 2"/>
-        {form.assets&&form.assets.length>0?(
-          <div>
-            <div style={{fontSize:11,color:"#166534",marginBottom:10}}>
-              {form.assets.length} asset{form.assets.length!==1?"s":""} auto-populated from the PDF. Review before submitting.
-            </div>
-            <div style={{border:"1px solid #86EFAC",borderRadius:10,overflow:"hidden"}}>
-              <table style={{borderCollapse:"collapse",width:"100%",fontSize:12}}>
-                <thead>
-                  <tr style={{background:"#DCFCE7"}}>
-                    {["#","Symbol","Security name","Shares quantity","Exchange"].map(function(h){return <th key={h} style={{padding:"7px 12px",textAlign:"left",fontWeight:700,color:"#166534",borderBottom:"1px solid #86EFAC"}}>{h}</th>;})}
-                  </tr>
-                </thead>
-                <tbody>
-                  {form.assets.map(function(a,i){return(
+        <div>
+          <div style={{fontSize:11,color:"#166534",marginBottom:10}}>
+            Review auto-filled rows or add/edit manually. At least one complete asset row is required to submit.
+          </div>
+          <div style={{border:"1px solid #86EFAC",borderRadius:10,overflow:"hidden"}}>
+            <table style={{borderCollapse:"collapse",width:"100%",fontSize:12}}>
+              <thead>
+                <tr style={{background:"#DCFCE7"}}>
+                  {["#","Symbol","Security name","Shares quantity","Exchange","Actions"].map(function(h){return <th key={h} style={{padding:"7px 12px",textAlign:"left",fontWeight:700,color:"#166534",borderBottom:"1px solid #86EFAC"}}>{h}</th>;})}
+                </tr>
+              </thead>
+              <tbody>
+                {(form.assets&&form.assets.length?form.assets:[blankAssetRow()]).map(function(a,i){
+                  var rowValid=isValidAssetRow(a);
+                  return(
                     <tr key={i} style={{background:i%2?"#F0FDF4":"#fff",borderBottom:"1px solid #DCFCE7"}}>
                       <td style={{padding:"7px 12px",color:"#9CA3AF",fontSize:11}}>{i+1}</td>
-                      <td style={{padding:"7px 12px",fontWeight:800,fontFamily:"monospace",color:"#15803D",fontSize:13}}>{a.symbol}</td>
-                      <td style={{padding:"7px 12px",fontWeight:600,color:"#111827"}}>{a.name}</td>
-                      <td style={{padding:"7px 12px",textAlign:"right",fontWeight:700,color:"#1D4ED8",fontSize:13}}>{a.qty}</td>
-                      <td style={{padding:"7px 12px",color:"#6B7280"}}>{a.exchange}</td>
+                      <td style={{padding:"4px 8px"}}>
+                        <input value={(a&&a.symbol)||""} onChange={function(e){setAssetField(i,"symbol",e.target.value);}} placeholder="AAPL" style={{width:"100%",border:"1px solid #86EFAC",borderRadius:6,padding:"5px 7px",fontSize:12,fontFamily:"monospace",boxSizing:"border-box"}}/>
+                      </td>
+                      <td style={{padding:"4px 8px"}}>
+                        <input value={(a&&a.name)||""} onChange={function(e){setAssetField(i,"name",e.target.value);}} placeholder="Apple Inc" style={{width:"100%",border:"1px solid #86EFAC",borderRadius:6,padding:"5px 7px",fontSize:12,boxSizing:"border-box"}}/>
+                      </td>
+                      <td style={{padding:"4px 8px"}}>
+                        <input type="number" value={(a&&a.qty)||""} onChange={function(e){setAssetField(i,"qty",e.target.value);}} placeholder="100" style={{width:"100%",border:"1px solid #86EFAC",borderRadius:6,padding:"5px 7px",fontSize:12,textAlign:"right",boxSizing:"border-box"}}/>
+                      </td>
+                      <td style={{padding:"4px 8px"}}>
+                        <input value={(a&&a.exchange)||""} onChange={function(e){setAssetField(i,"exchange",e.target.value);}} placeholder="NASDAQ" style={{width:"100%",border:"1px solid #86EFAC",borderRadius:6,padding:"5px 7px",fontSize:12,boxSizing:"border-box"}}/>
+                      </td>
+                      <td style={{padding:"4px 8px",whiteSpace:"nowrap"}}>
+                        <button onClick={function(){removeAssetRow(i);}} style={{fontSize:11,border:"1px solid #FCA5A5",background:"#FEF2F2",color:"#DC2626",borderRadius:6,padding:"4px 8px",cursor:"pointer"}}>Remove</button>
+                        {!rowValid&&<span style={{marginLeft:7,fontSize:10,color:"#B91C1C"}}>incomplete</span>}
+                      </td>
                     </tr>
-                  );})}
-                </tbody>
-              </table>
-            </div>
-            <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center",padding:"9px 14px",background:"#DCFCE7",borderRadius:8}}>
-              <span style={{fontSize:12,color:"#166534",fontWeight:600}}>{form.assets.length} asset{form.assets.length!==1?"s":""}</span>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:10,flexWrap:"wrap"}}>
+            <button onClick={addAssetRow} style={{fontSize:11,fontWeight:700,border:"1px solid #86EFAC",borderRadius:7,padding:"5px 11px",cursor:"pointer",background:"#DCFCE7",color:"#166534"}}>+ Add asset row</button>
+            <div style={{display:"flex",gap:8,alignItems:"center",padding:"9px 14px",background:"#DCFCE7",borderRadius:8}}>
+              <span style={{fontSize:12,color:"#166534",fontWeight:600}}>{numAssets} valid asset{numAssets!==1?"s":""}</span>
               <span style={{fontSize:11,color:"#166534",opacity:0.7}}>·</span>
               <span style={{fontSize:11,color:"#166534"}}>Total fee:</span>
               <span style={{fontSize:18,fontWeight:800,color:"#15803D"}}>${totalFee}</span>
-              <span style={{fontSize:11,color:"#166534",opacity:0.7}}>({form.assets.length} × $100)</span>
+              <span style={{fontSize:11,color:"#166534",opacity:0.7}}>({numAssets} × $100)</span>
             </div>
           </div>
-        ):(
-          <div style={{border:"2px dashed #86EFAC",borderRadius:10,padding:"28px 20px",textAlign:"center"}}>
-            <div style={{fontSize:22,marginBottom:8}}>📋</div>
-            <div style={{fontSize:13,fontWeight:600,color:"#166534",marginBottom:4}}>Assets will appear here automatically</div>
-            <div style={{fontSize:11,color:"#6B7280"}}>Upload the Securities Out Form in Step 1 to auto-populate this table from page 2 of the form.</div>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* ── STEP 5 — Fee acknowledgement  (Amber) ── */}
