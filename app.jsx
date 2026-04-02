@@ -5714,76 +5714,69 @@ function AuditHistoryTab(){
   );
 }
 
+// ── Transfer Type Selector Component ──────────────────
+function TransferTypeSelector(sprops){
+  var onSelect=sprops.onSelect;
+  return (
+    <div style={{fontFamily:"system-ui,sans-serif",padding:24,minHeight:"100vh",background:"linear-gradient(135deg, #667eea 0%, #764ba2 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center",marginBottom:40}}>
+        <div style={{fontSize:32,fontWeight:800,color:"#fff",marginBottom:8}}>Transfers Hub</div>
+        <div style={{fontSize:14,color:"rgba(255,255,255,0.8)"}}>Select a transfer type to continue</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:20,width:"100%",maxWidth:900}}>
+        {[
+          {id:"securities-out",title:"Securities Out",desc:"ACAT Out transfers",icon:"Out",color:"#4338CA"},
+          {id:"securities-in",title:"Securities In",desc:"Under construction",icon:"In",color:"#DC2626"},
+          {id:"tangany",title:"Tangany",desc:"Under construction",icon:"TG",color:"#EA580C"}
+        ].map(function(opt){
+          return (
+            <button key={opt.id}
+              onClick={function(){onSelect(opt.id);}}
+              style={{
+                padding:24,
+                borderRadius:14,
+                border:"2px solid rgba(255,255,255,0.35)",
+                background:"rgba(255,255,255,0.1)",
+                color:"#fff",
+                cursor:"pointer",
+                transition:"all 0.2s"
+              }}
+              onMouseEnter={function(e){e.currentTarget.style.transform="translateY(-2px)";}}
+              onMouseLeave={function(e){e.currentTarget.style.transform="translateY(0)";}}
+            >
+              <div style={{fontSize:26,fontWeight:800,marginBottom:12,letterSpacing:0.3}}>{opt.icon}</div>
+              <div style={{fontSize:16,fontWeight:700,marginBottom:6}}>{opt.title}</div>
+              <div style={{fontSize:12,opacity:0.85}}>{opt.desc}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Under Construction Placeholder ────────────────────
+function UnderConstructionPage(sprops){
+  var title=sprops.title;
+  var onBack=sprops.onBack;
+  return (
+    <div style={{fontFamily:"system-ui,sans-serif",padding:24,minHeight:"100vh",background:"#F8FAFC",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center",background:"#fff",border:"2px solid #F3F4F6",borderRadius:16,padding:40,maxWidth:500}}>
+        <div style={{fontSize:48,fontWeight:800,color:"#D97706",marginBottom:12}}>WORK IN PROGRESS</div>
+        <div style={{fontSize:22,fontWeight:700,color:"#111827",marginBottom:8}}>{title}</div>
+        <div style={{fontSize:14,color:"#6B7280",marginBottom:24}}>This section is under construction. Integrations will be added in the next phase.</div>
+        <button onClick={onBack} style={{padding:"10px 20px",borderRadius:8,border:"1px solid #E5E7EB",background:"#fff",color:"#374151",cursor:"pointer",fontSize:13,fontWeight:600}}>Back to Transfer Type</button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
-  // ── Transfer Type Selector Component ──────────────────
-  function TransferTypeSelector(sprops){
-    var onSelect=sprops.onSelect;
-    return (
-      <div style={{fontFamily:"system-ui,sans-serif",padding:24,minHeight:"100vh",background:"linear-gradient(135deg, #667eea 0%, #764ba2 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-        <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{fontSize:32,fontWeight:800,color:"#fff",marginBottom:8}}>Transfers Hub</div>
-          <div style={{fontSize:14,color:"rgba(255,255,255,0.8)"}}>Select a transfer type to continue</div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:20,width:"100%",maxWidth:900}}>
-          {[
-            {id:"securities-out",title:"Securities Out",desc:"ACAT Out transfers",icon:"📤",color:"#4338CA"},
-            {id:"securities-in",title:"Securities In",desc:"Under construction",icon:"📥",color:"#DC2626",disabled:true},
-            {id:"tangany",title:"Tangany",desc:"Under construction",icon:"🔗",color:"#EA580C",disabled:true}
-          ].map(function(opt){
-            return (
-              <button key={opt.id}
-                onClick={function(){if(!opt.disabled)onSelect(opt.id);}}
-                style={{
-                  padding:24,
-                  borderRadius:14,
-                  border:"2px solid "+(opt.disabled?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.4)"),
-                  background:"rgba(255,255,255,"+(opt.disabled?"0.05":"0.1")+")",
-                  color:"#fff",
-                  cursor:opt.disabled?"not-allowed":"pointer",
-                  transition:"all 0.3s",
-                  opacity:opt.disabled?0.6:1
-                }}
-                onMouseEnter={function(e){if(!opt.disabled)e.currentTarget.style.transform="scale(1.02)";}}
-                onMouseLeave={function(e){e.currentTarget.style.transform="scale(1)";}}
-              >
-                <div style={{fontSize:40,marginBottom:12}}>{opt.icon}</div>
-                <div style={{fontSize:16,fontWeight:700,marginBottom:6}}>{opt.title}</div>
-                <div style={{fontSize:12,opacity:0.8}}>{opt.desc}</div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Under Construction Placeholder ────────────────────
-  function UnderConstructionPage(sprops){
-    var title=sprops.title;
-    var onBack=sprops.onBack;
-    return (
-      <div style={{fontFamily:"system-ui,sans-serif",padding:24,minHeight:"100vh",background:"#F8FAFC",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-        <div style={{textAlign:"center",background:"#fff",border:"2px solid #F3F4F6",borderRadius:16,padding:40,maxWidth:500}}>
-          <div style={{fontSize:60,marginBottom:16}}>🚧</div>
-          <div style={{fontSize:22,fontWeight:700,color:"#111827",marginBottom:8}}>{title}</div>
-          <div style={{fontSize:14,color:"#6B7280",marginBottom:24}}>This section is currently under construction. We're working on integrating the necessary platforms and workflows.</div>
-          <button onClick={onBack} style={{padding:"10px 20px",borderRadius:8,border:"1px solid #E5E7EB",background:"#fff",color:"#374151",cursor:"pointer",fontSize:13,fontWeight:600}}>← Back to Transfer Type</button>
-        </div>
-      </div>
-    );
-  }
-
-  function App() {
   var [user,setUser]=useState(null);
   var [tab,setTab]=useState(null);
   var [sessionHydrated,setSessionHydrated]=useState(false);
   var [transferType,setTransferType]=useState(null);
 
-  // ── localStorage persistence ──────────────────────────────────
-    // Helper to get transfer-type-specific storage key
-    function getStorageKey(prefix){
-      return transferType ? prefix+"_"+transferType : prefix;
-    }
   // Load cases from localStorage on first render, fall back to SEED
   var [cases,setCasesRaw]=useState(function(){
     try{
@@ -5805,7 +5798,6 @@ function App() {
     return DEFAULT_PERMISSIONS;
   });
 
-  // Wrap setters to also persist to localStorage
   function setCases(updater){
     setCasesRaw(function(prev){
       var next=typeof updater==="function"?updater(prev):updater;
@@ -5814,6 +5806,7 @@ function App() {
       return next;
     });
   }
+
   function setPermissions(updater){
     setPermissionsRaw(function(prev){
       var next=typeof updater==="function"?updater(prev):updater;
@@ -5821,7 +5814,6 @@ function App() {
       return next;
     });
   }
-  // ─────────────────────────────────────────────────────────────
 
   var trackingView=useMemo(function(){
     try{
@@ -5848,7 +5840,6 @@ function App() {
     var resolved={id:u.email,name:u.name,email:u.email,role:access.primary,roles:access.roles,tabs:access.tabs,queueStages:access.queueStages,visibleStages:access.visibleStages};
     if(u.accountName)resolved.accountName=u.accountName;
     if(!opts.skipAudit){
-      // Record audit entry
       appendAuditEntry({
         time:new Date().toISOString().replace("T"," ").slice(0,19),
         name:u.name,
@@ -5875,7 +5866,7 @@ function App() {
             name:parsed.name||parsed.email,
             accountName:parsed.accountName||""
           },{skipAudit:true,preferredTab:parsed.tab||null});
-                  if(parsed.transferType)setTransferType(parsed.transferType);
+          if(parsed.transferType)setTransferType(parsed.transferType);
         }
       }
     }catch(e){}
@@ -5889,8 +5880,8 @@ function App() {
           email:user.email,
           name:user.name,
           accountName:user.accountName||"",
-          tab:tab||""
-                  transferType:transferType||""
+          tab:tab||"",
+          transferType:transferType||""
         }));
       }else{
         localStorage.removeItem("acatout_session");
@@ -5904,6 +5895,10 @@ function App() {
 
   if(!user)return <LoginScreen onLogin={handleLogin} permissions={permissions}/>;
 
+  if(!transferType)return <TransferTypeSelector onSelect={function(type){setTransferType(type);}}/>;
+  if(transferType==="securities-in")return <UnderConstructionPage title="Securities In" onBack={function(){setTransferType(null);}}/>;
+  if(transferType==="tangany")return <UnderConstructionPage title="Tangany Transfers" onBack={function(){setTransferType(null);}}/>;
+
   var tabs=user.tabs||(TAB_MAP[user.role]||TAB_MAP.Requester);
   var myQueueStages=user.queueStages||(ROLE_QUEUE_STAGES[user.role]||[]);
   var pendingMe=cases.filter(function(c){return myQueueStages.includes(c.status);}).length;
@@ -5914,10 +5909,10 @@ function App() {
         <div>
           <div style={{fontSize:17,fontWeight:700,color:"#111827"}}>Transfers Hub</div>
           <div style={{fontSize:12,color:"#9CA3AF"}}>{cases.filter(function(c){return !["Completed","Rejected"].includes(c.status);}).length} active - {cases.filter(function(c){return c.status==="Completed";}).length} completed</div>
-                  <div style={{fontSize:11,color:"#7C3AED",fontWeight:600,marginTop:4}}>Transfer Type: {transferType==="securities-out"?"📤 Securities Out":"?"}</div>
+          <div style={{fontSize:11,color:"#7C3AED",fontWeight:600,marginTop:4}}>Transfer Type: Securities Out</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:9}}>
-                    <button onClick={function(){setTransferType(null);}} style={{fontSize:12,border:"1px solid #E5E7EB",borderRadius:8,padding:"6px 11px",cursor:"pointer",background:"#fff",color:"#6B7280",transition:"all 0.2s"}} onMouseEnter={function(e){e.currentTarget.style.background="#F3F4F6";}} onMouseLeave={function(e){e.currentTarget.style.background="#fff";}}>Switch Type</button>
+          <button onClick={function(){setTransferType(null);}} style={{fontSize:12,border:"1px solid #E5E7EB",borderRadius:8,padding:"6px 11px",cursor:"pointer",background:"#fff",color:"#6B7280"}}>Switch Type</button>
           <div style={{display:"flex",alignItems:"center",gap:8,background:"#F9FAFB",border:"1px solid #E5E7EB",borderRadius:10,padding:"6px 12px"}}>
             <Avatar name={user.name} role={user.role} size={28}/>
             <div>
@@ -5927,7 +5922,7 @@ function App() {
               </div>
             </div>
           </div>
-          <button onClick={function(){setUser(null);setTab(null);}} style={{fontSize:12,border:"1px solid #E5E7EB",borderRadius:8,padding:"6px 11px",cursor:"pointer",background:"#fff",color:"#6B7280"}}>Sign out</button>
+          <button onClick={function(){setUser(null);setTab(null);setTransferType(null);}} style={{fontSize:12,border:"1px solid #E5E7EB",borderRadius:8,padding:"6px 11px",cursor:"pointer",background:"#fff",color:"#6B7280"}}>Sign out</button>
         </div>
       </div>
       <div style={{display:"flex",borderBottom:"2px solid #F3F4F6",marginBottom:16,overflowX:"auto"}}>
@@ -5953,12 +5948,6 @@ function App() {
   );
 }
 
-  // Show transfer type selector if not yet selected
-  if(!transferType)return <TransferTypeSelector onSelect={function(type){setTransferType(type);}}/>;
-
-  // Show under construction pages
-  if(transferType==="securities-in")return <UnderConstructionPage title="Securities In" onBack={function(){setTransferType(null);}}/>;
-  if(transferType==="tangany")return <UnderConstructionPage title="Tangany Transfers" onBack={function(){setTransferType(null);}}/>;
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
 
