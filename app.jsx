@@ -873,7 +873,7 @@ function PositionsTable(props) {
         var newRows=c.execRows.map(function(r) {
           if(r.id!==rowId)return r;
           var nr=cloneObj(r); nr[field]=val;
-          if(field==="moApproval"&&val==="Approved"){nr.units="";nr.tradingUnitsTouched=false;}
+          if(field==="moApproval"&&val==="Approved"){nr.units="";nr.tradingUnitsTouched=false;nr.unitsMigrationDone=true;}
           if(nr.units&&nr.forexRate&&nr.payment)nr.tradingStatus="Position Closed";
           return nr;
         });
@@ -3275,17 +3275,23 @@ function ExecTrading(props) {
     var changed=false;
     p.cases.forEach(function(c){
       (c.execRows||[]).forEach(function(r){
-        if(r.moApproval==="Approved"&&!r.tradingUnitsTouched&&r.units&&!(r.forexRate||r.payment))changed=true;
+        if(r.moApproval==="Approved"&&r.unitsMigrationDone!==true&&r.units&&!(r.forexRate||r.payment))changed=true;
       });
     });
     if(!changed)return;
     p.setCases(function(prev){
       return prev.map(function(c){
         var newRows=(c.execRows||[]).map(function(r){
-          if(r.moApproval==="Approved"&&!r.tradingUnitsTouched&&r.units&&!(r.forexRate||r.payment)){
+          if(r.moApproval==="Approved"&&r.unitsMigrationDone!==true&&r.units&&!(r.forexRate||r.payment)){
             var nr=cloneObj(r);
             nr.units="";
+            nr.unitsMigrationDone=true;
             return nr;
+          }
+          if(r.unitsMigrationDone!==true){
+            var nr2=cloneObj(r);
+            nr2.unitsMigrationDone=true;
+            return nr2;
           }
           return r;
         });
@@ -3710,7 +3716,8 @@ function ExecutionTab(props) {
         tradingStatus:"New Request",
         moApproval:"Pending Approval",
         boStatus:"Pending",
-        tradingUnitsTouched:false
+        tradingUnitsTouched:false,
+        unitsMigrationDone:true
       });
       parsedCount++;
     });
@@ -3745,7 +3752,7 @@ function ExecutionTab(props) {
       return prev.map(function(c) {
         if(c.id!==caseId)return c;
         var newRows=c.execRows.map(function(r) {
-          return {id:r.id,rowNum:r.rowNum,addedDate:r.addedDate,cid:r.cid,asset:r.asset,instrumentID:r.instrumentID,positionID:r.positionID,units:"",forexRate:r.forexRate,payment:r.payment,tradingStatus:r.tradingStatus||"New Request",moApproval:"Approved",boStatus:r.boStatus||"Pending",tradingUnitsTouched:false};
+          return {id:r.id,rowNum:r.rowNum,addedDate:r.addedDate,cid:r.cid,asset:r.asset,instrumentID:r.instrumentID,positionID:r.positionID,units:"",forexRate:r.forexRate,payment:r.payment,tradingStatus:r.tradingStatus||"New Request",moApproval:"Approved",boStatus:r.boStatus||"Pending",tradingUnitsTouched:false,unitsMigrationDone:true};
         });
         var n=cloneObj(c); n.execRows=newRows; return n;
       });
