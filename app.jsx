@@ -436,7 +436,7 @@ var TAB_MAP = {
   AML:["🏠 Home","My Queue","All Cases","Raw Data"],
   "Middle Office":["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution"],
   Trading:["🏠 Home","Raw Data","Execution"],
-  Admin:["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution","Reports","QR Pilot","Permissions"]
+  Admin:["🏠 Home","My Queue","All Cases","Raw Data","New Request","Execution","Reports","QR Pilot","Permissions","History"]
 };
 
 // All tabs across all roles for the extraTabs picker
@@ -651,7 +651,7 @@ function RawDataTab(props) {
       </div>
 
       {/* Table */}
-      <div style={{overflowX:"auto",border:"1px solid #E5E7EB",borderRadius:12,maxHeight:560,overflowY:"auto"}}>
+      <div style={{overflowX:"auto",border:"1px solid #E5E7EB",borderRadius:12,maxHeight:"calc(100vh - 260px)",overflowY:"auto"}}>
         <table style={{borderCollapse:"collapse",fontSize:11,width:"max-content",minWidth:"100%"}}>
           <thead>
             <tr style={{background:"#F9FAFB",position:"sticky",top:0,zIndex:1}}>
@@ -1534,7 +1534,7 @@ function CaseDetail(props) {
     var val=c[item[0]];
     // lockedZero failing is NOT an Ops blocker when a locked amount has been entered —
     // Risk owns the waiver decision, so Ops can approve and route to Risk.
-    if(item[0]==="lockedZero"&&val===false&&c.lockedAmount&&Number(c.lockedAmount)>0&&isOpsStage)return false;
+    if(item[0]==="lockedZero"&&val===false&&c.lockedAmount&&Number(c.lockedAmount)>0)return false;
     return val===false&&!isExempt(item[0],val);
   });
   // Risk waiver gate: Risk must decide locked-amount waiver before advancing
@@ -5184,6 +5184,67 @@ function LoginScreen(props) {
   );
 }
 
+// ── Audit log helpers ────────────────────────────────────────────
+function getAuditLog(){
+  try{var s=localStorage.getItem("acatout_audit");return s?JSON.parse(s):[];}catch(e){return [];}
+}
+function appendAuditEntry(entry){
+  try{
+    var log=getAuditLog();
+    log.unshift(entry); // newest first
+    if(log.length>500)log=log.slice(0,500); // cap at 500 entries
+    localStorage.setItem("acatout_audit",JSON.stringify(log));
+  }catch(e){}
+}
+
+function AuditHistoryTab(){
+  var [log,setLog]=useState(function(){return getAuditLog();});
+  var [search,setSearch]=useState("");
+  function clearLog(){if(window.confirm("Clear all audit history? This cannot be undone.")){
+    localStorage.removeItem("acatout_audit");setLog([]);
+  }}
+  var filtered=log.filter(function(e){
+    var q=search.toLowerCase();
+    return !q||String(e.name+e.email+e.role+e.action).toLowerCase().includes(q);
+  });
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{fontSize:14,fontWeight:700,color:"#111827"}}>Login &amp; access audit log</div>
+        <span style={{fontSize:11,color:"#9CA3AF"}}>{log.length} events stored</span>
+        <input style={{marginLeft:"auto",fontSize:12,border:"1px solid #E5E7EB",borderRadius:8,padding:"5px 10px",width:220}} placeholder="Search name, email, role…" value={search} onChange={function(e){setSearch(e.target.value);}}/>
+        <button onClick={clearLog} style={{fontSize:11,fontWeight:600,background:"#FEF2F2",color:"#DC2626",border:"1px solid #FCA5A5",borderRadius:7,padding:"5px 11px",cursor:"pointer"}}>Clear log</button>
+      </div>
+      {filtered.length===0&&<div style={{fontSize:13,color:"#9CA3AF",padding:"30px 0",textAlign:"center"}}>No audit events found.</div>}
+      <div style={{overflowX:"auto",border:"1px solid #E5E7EB",borderRadius:12,maxHeight:"calc(100vh - 230px)",overflowY:"auto"}}>
+        <table style={{borderCollapse:"collapse",fontSize:11,width:"100%"}}>
+          <thead>
+            <tr style={{background:"#F9FAFB",position:"sticky",top:0,zIndex:1}}>
+              {["Time","Name","Email","Role(s)","Action","IP / UserAgent"].map(function(h){
+                return <th key={h} style={{padding:"7px 12px",textAlign:"left",fontWeight:700,color:"#374151",borderBottom:"2px solid #E5E7EB",whiteSpace:"nowrap"}}>{h}</th>;
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(function(e,i){
+              return (
+                <tr key={i} style={{background:i%2?"#F9FAFB":"#fff",borderBottom:"1px solid #F3F4F6"}}>
+                  <td style={{padding:"6px 12px",whiteSpace:"nowrap",fontFamily:"monospace",color:"#6B7280"}}>{e.time}</td>
+                  <td style={{padding:"6px 12px",fontWeight:600,color:"#111827"}}>{e.name}</td>
+                  <td style={{padding:"6px 12px",color:"#6366F1",fontFamily:"monospace"}}>{e.email}</td>
+                  <td style={{padding:"6px 12px"}}><span style={{fontWeight:700,color:ROLE_COLOR[e.role]||"#374151"}}>{e.role}</span></td>
+                  <td style={{padding:"6px 12px",color:"#374151"}}>{e.action}</td>
+                  <td style={{padding:"6px 12px",color:"#9CA3AF",fontSize:10,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.ua}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   var [user,setUser]=useState(null);
   var [tab,setTab]=useState(null);
@@ -5251,6 +5312,15 @@ function App() {
     var access=fresh?resolveUserAccess(fresh):{primary:"Requester",roles:["Requester"],tabs:TAB_MAP.Requester,queueStages:ROLE_QUEUE_STAGES.Requester||[],visibleStages:ROLE_VISIBLE_STAGES.Requester};
     var resolved={id:u.email,name:u.name,email:u.email,role:access.primary,roles:access.roles,tabs:access.tabs,queueStages:access.queueStages,visibleStages:access.visibleStages};
     if(u.accountName)resolved.accountName=u.accountName;
+    // Record audit entry
+    appendAuditEntry({
+      time:new Date().toISOString().replace("T"," ").slice(0,19),
+      name:u.name,
+      email:u.email,
+      role:access.primary,
+      action:"Signed in · roles: "+(access.roles||[access.primary]).join(", "),
+      ua:navigator.userAgent.slice(0,120)
+    });
     setUser(resolved);
     setTab(access.tabs[0]);
   }
@@ -5298,6 +5368,7 @@ function App() {
         {tab==="Reports"     && <ReportsTab cases={cases}/>}
         {tab==="QR Pilot"    && <QRPilotTab cases={cases}/>}
         {tab==="Permissions" && <PermissionManager permissions={permissions} setPermissions={setPermissions}/>}
+        {tab==="History"     && <AuditHistoryTab/>}
       </div>
     </div>
   );
