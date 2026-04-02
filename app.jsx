@@ -4788,6 +4788,17 @@ function ClientTrackingPage(props){
           )}
           <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>Last refreshed: {latestDate}</div>
         </div>
+
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:10}}>
+          {[
+            ["Review","#DBEAFE","#1E40AF"],
+            ["Action needed","#FFEDD5","#9A3412"],
+            ["In progress","#CCFBF1","#0F766E"],
+            ["Completed","#DCFCE7","#166534"]
+          ].map(function(x){
+            return <span key={x[0]} style={{fontSize:10,fontWeight:700,background:x[1],color:x[2],borderRadius:99,padding:"3px 10px",border:"1px solid "+x[2]+"22"}}>{x[0]}</span>;
+          })}
+        </div>
       </div>
     </div>
   );
