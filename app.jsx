@@ -4725,7 +4725,7 @@ function ClientTrackingPage(props){
 
   var latestMsg="Request is being processed.";
   if(c.status==="Pending Ops"&&opsMissing.length){
-    latestMsg="Under review. Action needed: "+opsMissing.join("; ")+".";
+    latestMsg="Under review. Please complete the following to continue:";
   }else if(c.status==="Pending Ops"||c.status==="Pending AML"){
     latestMsg="Under review by the operations/compliance team.";
   }else if(c.notes&&c.notes.length){
@@ -4753,6 +4753,18 @@ function ClientTrackingPage(props){
         <div style={{border:"1px solid #E5E7EB",borderRadius:10,padding:12,background:"#FAFAFA"}}>
           <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:6}}>Latest update</div>
           <div style={{fontSize:12,color:"#374151"}}>{latestMsg}</div>
+          {c.status==="Pending Ops"&&opsMissing.length>0&&(
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:10}}>
+              {opsMissing.map(function(item,i){
+                return (
+                  <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px"}}>
+                    <span style={{fontSize:12,color:"#C2410C",lineHeight:1.3}}>•</span>
+                    <span style={{fontSize:12,color:"#9A3412",lineHeight:1.4}}>{item}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>{latestDate}</div>
         </div>
       </div>
