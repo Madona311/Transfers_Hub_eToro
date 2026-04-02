@@ -2658,6 +2658,22 @@ function NewRequestTab(props) {
       var lib=window["pdfjs-dist/build/pdf"];
       var pdf=await lib.getDocument({data:arrayBuffer}).promise;
 
+      // Build page text snapshots for flattened PDFs (no AcroForm fields).
+      var pageTexts=[];
+      for(var ti=1;ti<=pdf.numPages;ti++){
+        var tpg=await pdf.getPage(ti);
+        var tct=await tpg.getTextContent();
+        var chunks=[];
+        for(var tci=0;tci<tct.items.length;tci++){
+          var it=tct.items[tci];
+          chunks.push((it&&it.str)||"");
+          if(it&&it.hasEOL)chunks.push("\n");
+          else chunks.push(" ");
+        }
+        pageTexts.push(chunks.join("").replace(/[ \t]+/g," ").replace(/\n\s+/g,"\n"));
+      }
+      var allText=pageTexts.join("\n");
+
       // ── STEP 1: Read form fields via annotations (this is where filled values live) ──
       var fields={};
       for(var pi=1;pi<=pdf.numPages;pi++){
@@ -2703,23 +2719,48 @@ function NewRequestTab(props) {
         }
         return "";
       }
+      function pickFromText(regexes){
+        for(var ri=0;ri<regexes.length;ri++){
+          var m=allText.match(regexes[ri]);
+          if(m&&m[1]&&String(m[1]).trim())return String(m[1]).trim();
+        }
+        return "";
+      }
 
       // ── Client Information (Page 1) ──
       // Try template-specific field IDs first, then fall back to keyword-based matching.
       var clientName=pickFieldByHints(["Text1"],[["client","name"],["fullname"],["transferor","name"],["accountholder","name"]]);
+      if(!clientName){
+        clientName=pickFromText([
+          /(?:Client\s*Name|Full\s*Name|Name\s*of\s*Transferor)\s*[:\-]\s*([^\n]{2,80})/i
+        ]);
+      }
       if(clientName){patch.clientName=clientName;af.clientName=true;filled.push("Client name");}
 
       var reason=pickFieldByHints(["Text4"],[["transfer","reason"],["reason"]]);
+      if(!reason){
+        reason=pickFromText([/(?:Transfer\s*Reason|Reason)\s*[:\-]\s*([^\n]{2,120})/i]);
+      }
       if(reason){patch.reason=reason;af.reason=true;filled.push("Reason");}
 
       var cid=pickFieldByHints(["Text2"],[["cid"],["client","id"]]);
+      if(!cid){
+        cid=pickFromText([/(?:Client\s*CID|CID|Client\s*ID)\s*[:\-]\s*([A-Za-z0-9\-]{3,30})/i]);
+      }
       if(cid){patch.cid=cid;af.cid=true;filled.push("CID");}
 
       var country=pickFieldByHints(["Text3"],[["country"],["residence","country"]]);
+      if(!country){
+        country=pickFromText([/(?:Country|Residence\s*Country)\s*[:\-]\s*([A-Za-z ]{2,40})/i]);
+      }
       if(country){patch.country=country;af.country=true;filled.push("Country");}
 
       // Approximate Market Value  ($ 136,845 -> 136845)
       var rawVal=pickFieldByHints(["Text5"],[["market","value"],["value","usd"],["approximate","value"]]).replace(/[\$,\s]/g,"").trim();
+      if(!rawVal){
+        var textVal=pickFromText([/(?:Approx(?:imate)?\s*Market\s*Value|Market\s*Value|Value\s*\(USD\)|Value\s*USD)\s*[:\-]?\s*\$?\s*([0-9][0-9,\.]{1,20})/i]);
+        rawVal=(textVal||"").replace(/[\$,\s]/g,"").trim();
+      }
       if(rawVal&&!isNaN(Number(rawVal))){patch.valueUSD=rawVal;af.valueUSD=true;filled.push("Value");}
 
       // Transfer type — Group1 radio button
@@ -2734,15 +2775,27 @@ function NewRequestTab(props) {
 
       // ── Receiving Bank Information (Page 1) ──
       var broker=pickFieldByHints(["Text8"],[["broker","name"],["bank","name"],["receiving","bank"],["receiving","broker"]]);
+      if(!broker){
+        broker=pickFromText([/(?:Receiving\s*(?:Bank|Broker)\s*Name|Bank\s*\/\s*Broker\s*Name|Broker\s*Name|Bank\s*Name)\s*[:\-]\s*([^\n]{2,120})/i]);
+      }
       if(broker){patch.broker=broker;af.broker=true;filled.push("Broker name");}
 
       var brokerEmail=pickFieldByHints(["Text10"],[["broker","email"],["bank","email"],["receiving","email"],["fop","email"]]);
+      if(!brokerEmail){
+        brokerEmail=pickFromText([/(?:Broker\s*Email|Bank\s*Email|Receiving\s*Email|Email)\s*[:\-]\s*([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})/i]);
+      }
       if(brokerEmail){patch.brokerEmail=brokerEmail;af.brokerEmail=true;filled.push("Broker email");}
 
       var accName=pickFieldByHints(["Text6"],[["requester","account","name"],["account","holder","name"],["account","name"]]);
+      if(!accName){
+        accName=pickFromText([/(?:Requester\s*Account\s*Name|Account\s*Holder\s*Name|Account\s*Name)\s*[:\-]\s*([^\n]{2,120})/i]);
+      }
       if(accName){patch.requesterAccountName=accName;af.requesterAccountName=true;filled.push("Account name");}
 
       var accNum=pickFieldByHints(["Text7"],[["requester","account","number"],["account","number"],["account","id"]]);
+      if(!accNum){
+        accNum=pickFromText([/(?:Requester\s*Account\s*Number|Account\s*Number|Account\s*ID)\s*[:\-]\s*([A-Za-z0-9\-]{3,40})/i]);
+      }
       if(accNum){patch.requesterAccountNumber=accNum;af.requesterAccountNumber=true;filled.push("Account number");}
 
       // ── Assets Table (Page 2) ──
@@ -2780,13 +2833,31 @@ function NewRequestTab(props) {
           if(r.symbol&&r.name&&r.qty)assets.push({symbol:r.symbol,name:r.name,qty:r.qty,exchange:r.exchange||"—"});
         });
       }
+      if(!assets.length){
+        // Fallback: parse probable asset lines from text when table fields are flattened.
+        var seen={};
+        var lines=allText.split(/\n+/).map(function(l){return l.trim();}).filter(function(l){return l.length>0;});
+        for(var li=0;li<lines.length;li++){
+          var line=lines[li].replace(/\s+/g," ");
+          var m1=line.match(/^([A-Z0-9\.\-]{1,12})\s+([A-Za-z][A-Za-z0-9&\.,'\/\-\(\) ]{2,90})\s+([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s+([A-Za-z]{2,10}))?$/);
+          var m2=line.match(/^([A-Za-z][A-Za-z0-9&\.,'\/\-\(\) ]{2,90})\s+([A-Z0-9\.\-]{1,12})\s+([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s+([A-Za-z]{2,10}))?$/);
+          var sym=""; var name=""; var qty=""; var exch="—";
+          if(m1){sym=m1[1];name=m1[2].trim();qty=m1[3];exch=m1[4]||"—";}
+          else if(m2){name=m2[1].trim();sym=m2[2];qty=m2[3];exch=m2[4]||"—";}
+          if(sym&&name&&qty){
+            var key=(sym+"|"+name+"|"+qty).toLowerCase();
+            if(!seen[key]){seen[key]=true;assets.push({symbol:sym,name:name,qty:qty,exchange:exch});}
+          }
+        }
+      }
       if(assets.length){
         patch.instruments=assets.length;
         patch.assets=assets;
         filled.push(assets.length+" asset(s) detected");
       }
       if(!fieldEntries.length){
-        filled.push("⚠ This PDF version exposes limited form fields; please verify manually.");
+        if((allText||"").replace(/\s/g,"").length<40)filled.push("⚠ This PDF appears to be image-only (scanned). Autofill cannot read it.");
+        else filled.push("⚠ This PDF version exposes limited form fields; using text-based extraction fallback.");
       }
 
       // ── Signature detection ──
