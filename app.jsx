@@ -1,4 +1,4 @@
-﻿const { useState, useMemo } = React;
+﻿const { useState, useMemo, useEffect } = React;
 
 // ── Gmail notification helpers ────────────────────────────────────
 // Maps each stage to the role that owns it — used to find who to notify
@@ -873,7 +873,7 @@ function PositionsTable(props) {
         var newRows=c.execRows.map(function(r) {
           if(r.id!==rowId)return r;
           var nr=cloneObj(r); nr[field]=val;
-          if(field==="moApproval"&&val==="Approved")nr.units="";
+          if(field==="moApproval"&&val==="Approved"){nr.units="";nr.tradingUnitsTouched=false;}
           if(nr.units&&nr.forexRate&&nr.payment)nr.tradingStatus="Position Closed";
           return nr;
         });
@@ -3271,6 +3271,29 @@ function ExecTrading(props) {
   var [bulkPaste,setBulkPaste]=useState("");
   var [bulkInfo,setBulkInfo]=useState("");
 
+  useEffect(function(){
+    var changed=false;
+    p.cases.forEach(function(c){
+      (c.execRows||[]).forEach(function(r){
+        if(r.moApproval==="Approved"&&!r.tradingUnitsTouched&&r.units&&!(r.forexRate||r.payment))changed=true;
+      });
+    });
+    if(!changed)return;
+    p.setCases(function(prev){
+      return prev.map(function(c){
+        var newRows=(c.execRows||[]).map(function(r){
+          if(r.moApproval==="Approved"&&!r.tradingUnitsTouched&&r.units&&!(r.forexRate||r.payment)){
+            var nr=cloneObj(r);
+            nr.units="";
+            return nr;
+          }
+          return r;
+        });
+        var n=cloneObj(c); n.execRows=newRows; return n;
+      });
+    });
+  },[p.cases,p.setCases]);
+
   var approvedRows=useMemo(function(){
     var rows=[];
     p.cases.forEach(function(c){
@@ -3296,6 +3319,7 @@ function ExecTrading(props) {
           if(r.id!==rowId)return r;
           var nr=cloneObj(r);
           nr[field]=val;
+          if(field==="units")nr.tradingUnitsTouched=true;
           if(nr.units&&nr.forexRate&&nr.payment)nr.tradingStatus="Position Closed";
           return nr;
         });
@@ -3385,6 +3409,7 @@ function ExecTrading(props) {
           nr.units=u.units||nr.units||"";
           nr.forexRate=u.forexRate||nr.forexRate||"";
           nr.payment=u.payment||nr.payment||"";
+          if(u.units)nr.tradingUnitsTouched=true;
           if(nr.units&&nr.forexRate&&nr.payment)nr.tradingStatus="Position Closed";
           return nr;
         });
@@ -3684,7 +3709,8 @@ function ExecutionTab(props) {
         payment:"",
         tradingStatus:"New Request",
         moApproval:"Pending Approval",
-        boStatus:"Pending"
+        boStatus:"Pending",
+        tradingUnitsTouched:false
       });
       parsedCount++;
     });
@@ -3719,7 +3745,7 @@ function ExecutionTab(props) {
       return prev.map(function(c) {
         if(c.id!==caseId)return c;
         var newRows=c.execRows.map(function(r) {
-          return {id:r.id,rowNum:r.rowNum,addedDate:r.addedDate,cid:r.cid,asset:r.asset,instrumentID:r.instrumentID,positionID:r.positionID,units:"",forexRate:r.forexRate,payment:r.payment,tradingStatus:r.tradingStatus||"New Request",moApproval:"Approved",boStatus:r.boStatus||"Pending"};
+          return {id:r.id,rowNum:r.rowNum,addedDate:r.addedDate,cid:r.cid,asset:r.asset,instrumentID:r.instrumentID,positionID:r.positionID,units:"",forexRate:r.forexRate,payment:r.payment,tradingStatus:r.tradingStatus||"New Request",moApproval:"Approved",boStatus:r.boStatus||"Pending",tradingUnitsTouched:false};
         });
         var n=cloneObj(c); n.execRows=newRows; return n;
       });
