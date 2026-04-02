@@ -2681,42 +2681,68 @@ function NewRequestTab(props) {
 
       var filled=[]; var patch={}; var af={};
 
+      function normKey(s){return String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");}
+      function strVal(v){return v===undefined||v===null?"":String(v).trim();}
+      var fieldEntries=Object.keys(fields).map(function(k){return {key:k,norm:normKey(k),val:strVal(fields[k])};});
+      function pickFieldByHints(directKeys,hintGroups){
+        for(var di=0;di<directKeys.length;di++){
+          var direct=strVal(fields[directKeys[di]]);
+          if(direct)return direct;
+        }
+        for(var ei=0;ei<fieldEntries.length;ei++){
+          var entry=fieldEntries[ei];
+          if(!entry.val)continue;
+          for(var gi=0;gi<hintGroups.length;gi++){
+            var group=hintGroups[gi];
+            var ok=true;
+            for(var hi=0;hi<group.length;hi++){
+              if(entry.norm.indexOf(group[hi])===-1){ok=false;break;}
+            }
+            if(ok)return entry.val;
+          }
+        }
+        return "";
+      }
+
       // ── Client Information (Page 1) ──
-      // Text1 = Name (Ian Mason)
-      var clientName=(fields["Text1"]||"").trim();
+      // Try template-specific field IDs first, then fall back to keyword-based matching.
+      var clientName=pickFieldByHints(["Text1"],[["client","name"],["fullname"],["transferor","name"],["accountholder","name"]]);
       if(clientName){patch.clientName=clientName;af.clientName=true;filled.push("Client name");}
 
-      // Text4 = Transfer Reason
-      var reason=(fields["Text4"]||"").trim();
+      var reason=pickFieldByHints(["Text4"],[["transfer","reason"],["reason"]]);
       if(reason){patch.reason=reason;af.reason=true;filled.push("Reason");}
 
-      // Text5 = Approximate Market Value  ($ 136, 845 → 136845)
-      var rawVal=(fields["Text5"]||"").replace(/[\$,\s]/g,"").trim();
+      var cid=pickFieldByHints(["Text2"],[["cid"],["client","id"]]);
+      if(cid){patch.cid=cid;af.cid=true;filled.push("CID");}
+
+      var country=pickFieldByHints(["Text3"],[["country"],["residence","country"]]);
+      if(country){patch.country=country;af.country=true;filled.push("Country");}
+
+      // Approximate Market Value  ($ 136,845 -> 136845)
+      var rawVal=pickFieldByHints(["Text5"],[["market","value"],["value","usd"],["approximate","value"]]).replace(/[\$,\s]/g,"").trim();
       if(rawVal&&!isNaN(Number(rawVal))){patch.valueUSD=rawVal;af.valueUSD=true;filled.push("Value");}
 
       // Transfer type — Group1 radio button
       // /Choice1 = CBO selected, /Choice2 = NCBO selected
-      var radioVal=(fields["Group1"]||fields["Group1__btn"]||"").toString();
-      var transferType=radioVal.includes("Choice1")?"CBO":"NCBO";
+      var radioVal=(fields["Group1"]||fields["Group1__btn"]||pickFieldByHints([],[["transfer","type"],["acat","type"]])||"").toString();
+      var transferType="NCBO";
+      if(/choice1|\bcbo\b/i.test(radioVal))transferType="CBO";
+      if(/choice2|\bncbo\b/i.test(radioVal))transferType="NCBO";
       patch.transferType=transferType;
       af.transferType=true;
       filled.push("Transfer type ("+transferType+")");
 
       // ── Receiving Bank Information (Page 1) ──
-      // Text8 = Bank Name (Interactive Brokers Ireland Limited)
-      var broker=(fields["Text8"]||"").trim();
+      var broker=pickFieldByHints(["Text8"],[["broker","name"],["bank","name"],["receiving","bank"],["receiving","broker"]]);
       if(broker){patch.broker=broker;af.broker=true;filled.push("Broker name");}
 
-      // Text10 = Email (fop-transfer-in@interactivebrokers.com)
-      var brokerEmail=(fields["Text10"]||"").trim();
+      var brokerEmail=pickFieldByHints(["Text10"],[["broker","email"],["bank","email"],["receiving","email"],["fop","email"]]);
       if(brokerEmail){patch.brokerEmail=brokerEmail;af.brokerEmail=true;filled.push("Broker email");}
 
-      // Text6 = Account Name (Ian J Mason)
-      var accName=(fields["Text6"]||"").trim();
+      var accName=pickFieldByHints(["Text6"],[["requester","account","name"],["account","holder","name"],["account","name"]]);
       if(accName){patch.requesterAccountName=accName;af.requesterAccountName=true;filled.push("Account name");}
 
-      // Text7 = Account Number (U11610846)
-      var accNum=(fields["Text7"]||"").trim();
+      var accNum=pickFieldByHints(["Text7"],[["requester","account","number"],["account","number"],["account","id"]]);
       if(accNum){patch.requesterAccountNumber=accNum;af.requesterAccountNumber=true;filled.push("Account number");}
 
       // ── Assets Table (Page 2) ──
@@ -2734,10 +2760,33 @@ function NewRequestTab(props) {
           assets.push({symbol:sym,name:name,qty:qty,exchange:exch||"—"});
         }
       }
+      if(!assets.length){
+        // Alternate templates may use named row fields instead of numeric IDs.
+        var rowMap={};
+        fieldEntries.forEach(function(entry){
+          if(!entry.val)return;
+          var m=entry.key.match(/(\d{1,3})$/);
+          if(!m)return;
+          var idx=Number(m[1]);
+          if(!(idx>=0&&idx<=500))return;
+          if(!rowMap[idx])rowMap[idx]={};
+          if(entry.norm.indexOf("symbol")!==-1||entry.norm.indexOf("ticker")!==-1)rowMap[idx].symbol=entry.val;
+          else if(entry.norm.indexOf("securityname")!==-1||entry.norm.indexOf("assetname")!==-1||entry.norm.indexOf("instrumentname")!==-1)rowMap[idx].name=entry.val;
+          else if(entry.norm.indexOf("shares")!==-1||entry.norm.indexOf("quantity")!==-1||entry.norm.indexOf("qty")!==-1||entry.norm.indexOf("units")!==-1)rowMap[idx].qty=entry.val;
+          else if(entry.norm.indexOf("exchange")!==-1||entry.norm.indexOf("market")!==-1)rowMap[idx].exchange=entry.val;
+        });
+        Object.keys(rowMap).sort(function(a,b){return Number(a)-Number(b);}).forEach(function(k){
+          var r=rowMap[k];
+          if(r.symbol&&r.name&&r.qty)assets.push({symbol:r.symbol,name:r.name,qty:r.qty,exchange:r.exchange||"—"});
+        });
+      }
       if(assets.length){
         patch.instruments=assets.length;
         patch.assets=assets;
         filled.push(assets.length+" asset(s) detected");
+      }
+      if(!fieldEntries.length){
+        filled.push("⚠ This PDF version exposes limited form fields; please verify manually.");
       }
 
       // ── Signature detection ──
