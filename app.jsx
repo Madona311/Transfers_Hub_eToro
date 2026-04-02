@@ -3267,14 +3267,175 @@ function ExecMOApprove(props) {
 
 function ExecTrading(props) {
   var p=props;
-  var execCases=p.cases.filter(function(c){return c.execRows&&c.execRows.length>0;});
+  var [bulkPaste,setBulkPaste]=useState("");
+  var [bulkInfo,setBulkInfo]=useState("");
+
+  var approvedRows=useMemo(function(){
+    var rows=[];
+    p.cases.forEach(function(c){
+      (c.execRows||[]).forEach(function(r){
+        if(r.moApproval==="Approved"){
+          var nr=cloneObj(r);
+          nr.caseId=c.id;
+          nr.clientName=c.clientName;
+          rows.push(nr);
+        }
+      });
+    });
+    return rows;
+  },[p.cases]);
+
+  var closedCount=approvedRows.filter(function(r){return r.tradingStatus==="Position Closed";}).length;
+
+  function updateGlobalRow(caseId,rowId,field,val){
+    p.setCases(function(prev){
+      return prev.map(function(c){
+        if(c.id!==caseId)return c;
+        var newRows=(c.execRows||[]).map(function(r){
+          if(r.id!==rowId)return r;
+          var nr=cloneObj(r);
+          nr[field]=val;
+          if(nr.units&&nr.forexRate&&nr.payment)nr.tradingStatus="Position Closed";
+          return nr;
+        });
+        var n=cloneObj(c); n.execRows=newRows; return n;
+      });
+    });
+  }
+
+  function applyBulkPaste(){
+    setBulkInfo("");
+    var lines=bulkPaste.trim().split("\n").filter(function(l){return l.trim();});
+    if(!lines.length){setBulkInfo("Nothing pasted.");return;}
+
+    var first=lines[0].toLowerCase();
+    var data=(first.includes("units")&&first.includes("forex"))?lines.slice(1):lines;
+
+    var rowKeys=[];
+    var updatesByCase={};
+    approvedRows.forEach(function(r){
+      rowKeys.push({caseId:r.caseId,rowId:r.id});
+    });
+
+    var applied=0;
+    rowKeys.forEach(function(k,i){
+      if(!data[i])return;
+      var cells=data[i].split("\t").map(function(x){return x.trim();});
+      var units="",forex="",payment="";
+      if(cells.length>=8){
+        units=cells[5]||"";
+        forex=cells[6]||"";
+        payment=cells[7]||"";
+      } else {
+        units=cells[0]||"";
+        forex=cells[1]||"";
+        payment=cells[2]||"";
+      }
+      if(!(units||forex||payment))return;
+      if(!updatesByCase[k.caseId])updatesByCase[k.caseId]={};
+      updatesByCase[k.caseId][k.rowId]={units:units,forexRate:forex,payment:payment};
+      applied++;
+    });
+
+    if(!applied){setBulkInfo("No valid rows to apply.");return;}
+
+    p.setCases(function(prev){
+      return prev.map(function(c){
+        var updates=updatesByCase[c.id];
+        if(!updates)return c;
+        var newRows=(c.execRows||[]).map(function(r){
+          var u=updates[r.id];
+          if(!u)return r;
+          var nr=cloneObj(r);
+          nr.units=u.units||nr.units||"";
+          nr.forexRate=u.forexRate||nr.forexRate||"";
+          nr.payment=u.payment||nr.payment||"";
+          if(nr.units&&nr.forexRate&&nr.payment)nr.tradingStatus="Position Closed";
+          return nr;
+        });
+        var n=cloneObj(c); n.execRows=newRows; return n;
+      });
+    });
+    setBulkInfo(applied+" row"+(applied!==1?"s":"")+" applied.");
+  }
+
+  function exportUnifiedSheet(){
+    var header="Case ID\tClient\tCID\tAsset\tInstrument ID\tPosition ID\tUnits\tEnd Forex Rate\tPayment to account";
+    var rows=approvedRows.map(function(r){
+      return r.caseId+"\t"+r.clientName+"\t"+r.cid+"\t"+r.asset+"\t"+r.instrumentID+"\t"+r.positionID+"\t"+(r.units||"")+"\t"+(r.forexRate||"")+"\t"+(r.payment||"");
+    });
+    var content=header+"\n"+rows.join("\n");
+    var a=document.createElement("a");
+    a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(content);
+    a.download="trading_closure_all_cids.tsv";
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+  }
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"9px 13px",fontSize:12,color:"#92400E",lineHeight:1.6}}>
-        Fill Units, End Forex Rate and Payment to account for each MO-approved position row.
+        Fill Units, End Forex Rate and Payment for all MO-approved rows in one place.
       </div>
-      {execCases.length===0&&<div style={{border:"1px dashed #E5E7EB",borderRadius:12,padding:36,textAlign:"center",color:"#9CA3AF"}}>No positions loaded - complete stages 2 and 3 first.</div>}
-      {execCases.map(function(c){return <TradingCaseCard key={c.id} c={c} setCases={p.setCases}/>;} )}
+      {approvedRows.length===0&&<div style={{border:"1px dashed #E5E7EB",borderRadius:12,padding:36,textAlign:"center",color:"#9CA3AF"}}>No MO-approved rows yet. Complete stage 3 first.</div>}
+      {approvedRows.length>0&&(
+        <div style={{border:"2px solid #E5E7EB",borderRadius:12,background:"#fff",overflow:"hidden"}}>
+          <div style={{background:closedCount===approvedRows.length?"#F0FDF4":"#F8FAFF",padding:"11px 14px",borderBottom:"1px solid #E5E7EB",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700}}>Trading closure - all CIDs</div>
+              <div style={{fontSize:11,color:"#6B7280"}}>{closedCount}/{approvedRows.length} positions closed</div>
+            </div>
+            <div style={{display:"flex",gap:7,alignItems:"center"}}>
+              {closedCount===approvedRows.length&&approvedRows.length>0&&<span style={{background:"#DCFCE7",color:"#166534",borderRadius:99,padding:"3px 11px",fontSize:11,fontWeight:700}}>All closed</span>}
+              <button onClick={exportUnifiedSheet} style={{fontSize:11,fontWeight:600,background:"#F0FDF4",color:"#166534",border:"1px solid #86EFAC",borderRadius:7,padding:"5px 12px",cursor:"pointer"}}>Export sheet</button>
+            </div>
+          </div>
+
+          <div style={{padding:"12px 14px",display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:10,color:"#9CA3AF",background:"#F9FAFB",borderRadius:5,padding:"5px 9px"}}>Paste all rows: Units / End Forex Rate / Payment (tab-separated). Rows map by table order.</div>
+              <textarea style={{width:"100%",minHeight:90,border:"1px solid #C7D2FE",borderRadius:8,padding:"7px 10px",fontSize:11,fontFamily:"monospace",boxSizing:"border-box",resize:"vertical"}} placeholder={"2.609977\t592.92\t1547.51"} value={bulkPaste} onChange={function(e){setBulkPaste(e.target.value);setBulkInfo("");}}/>
+              <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
+                <button onClick={applyBulkPaste} disabled={!bulkPaste.trim()} style={{background:bulkPaste.trim()?"#4338CA":"#D1D5DB",color:"#fff",border:"none",borderRadius:7,padding:"6px 14px",fontSize:11,fontWeight:600,cursor:bulkPaste.trim()?"pointer":"not-allowed"}}>Apply to all</button>
+                <button onClick={function(){setBulkPaste("");setBulkInfo("");}} style={{background:"#fff",border:"1px solid #E5E7EB",borderRadius:7,padding:"6px 12px",fontSize:11,cursor:"pointer",color:"#6B7280"}}>Clear</button>
+                {bulkInfo&&<span style={{fontSize:11,color:bulkInfo.includes("applied")?"#166534":"#DC2626",fontWeight:600}}>{bulkInfo}</span>}
+              </div>
+            </div>
+
+            <div style={{overflowX:"auto",border:"1px solid #E5E7EB",borderRadius:8}}>
+              <table style={{borderCollapse:"collapse",fontSize:10,width:"100%"}}>
+                <thead>
+                  <tr style={{background:"#F1F5F9"}}>
+                    {['#','Case','Client','CID','Asset','Instr ID','Position ID','Trading Status','MO Approval','Units','End Forex Rate','Payment to acct'].map(function(h){
+                      return <th key={h} style={{padding:"5px 8px",textAlign:"left",fontWeight:600,color:"#374151",borderBottom:"1px solid #E5E7EB",whiteSpace:"nowrap"}}>{h}</th>;
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {approvedRows.map(function(r,ri){
+                    var closed=r.tradingStatus==="Position Closed";
+                    return (
+                      <tr key={r.caseId+"-"+r.id} style={{background:closed?"#F0FDF4":ri%2?"#F9FAFB":"#fff",borderBottom:"1px solid #F3F4F6"}}>
+                        <td style={{padding:"4px 8px",color:"#9CA3AF"}}>{ri+1}</td>
+                        <td style={{padding:"4px 8px",fontFamily:"monospace",color:"#6B7280"}}>{r.caseId}</td>
+                        <td style={{padding:"4px 8px",fontWeight:600}}>{r.clientName}</td>
+                        <td style={{padding:"4px 8px",fontFamily:"monospace",color:"#1D4ED8",fontSize:10}}>{r.cid}</td>
+                        <td style={{padding:"4px 8px",fontWeight:600}}>{r.asset}</td>
+                        <td style={{padding:"4px 8px",fontFamily:"monospace"}}>{r.instrumentID}</td>
+                        <td style={{padding:"4px 8px",fontFamily:"monospace",color:"#6366F1"}}>{r.positionID}</td>
+                        <td style={{padding:"4px 8px"}}><StatusBadge v={r.tradingStatus||"New Request"} map={TRADING_COLORS}/></td>
+                        <td style={{padding:"4px 8px"}}><StatusBadge v={r.moApproval||"Pending Approval"} map={MO_APR_COLORS}/></td>
+                        <td style={{padding:"3px 5px"}}><input style={{border:"1px solid #C7D2FE",borderRadius:5,padding:"2px 5px",fontSize:10,width:70,textAlign:"right"}} value={r.units||""} onChange={function(e){updateGlobalRow(r.caseId,r.id,"units",e.target.value);}}/></td>
+                        <td style={{padding:"3px 5px"}}><input style={{border:"1px solid #C7D2FE",borderRadius:5,padding:"2px 5px",fontSize:10,width:60,textAlign:"right"}} value={r.forexRate||""} onChange={function(e){updateGlobalRow(r.caseId,r.id,"forexRate",e.target.value);}}/></td>
+                        <td style={{padding:"3px 5px"}}><input style={{border:"1px solid #C7D2FE",borderRadius:5,padding:"2px 5px",fontSize:10,width:70,textAlign:"right"}} value={r.payment||""} onChange={function(e){updateGlobalRow(r.caseId,r.id,"payment",e.target.value);}}/></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{border:"1px solid #C7D2FE",borderRadius:12,padding:14,background:"#EEF2FF"}}>
         <div style={{fontSize:13,fontWeight:700,color:"#4338CA",marginBottom:6}}>Confirm USD deduction amounts</div>
         <div style={{fontSize:11,color:"#6B7280",marginBottom:10}}>Paste CID, Asset name and confirmed USD amount.</div>
