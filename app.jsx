@@ -4706,6 +4706,34 @@ function ClientTrackingPage(props){
   if(idx<0)idx=0;
   var progress=Math.max(8,Math.min(100,Math.round(((idx+1)/simpleStages.length)*100)));
 
+  var statusLabel=(c.status==="Pending Ops"||c.status==="Pending AML")?"Under review":c.status;
+
+  var opsMissing=[];
+  if(c.status==="Pending Ops"){
+    var opsChecks=[
+      ["accountNormal","Account validation"],
+      ["cashOk","Sufficient cash coverage"],
+      ["formComplete","Transfer form/instructions"],
+      ["fullStockOut","Full stock-out confirmation"],
+      ["proofOwnership","Proof of ownership"],
+      ["nwaZero","NWA balance clearance"],
+      ["lockedZero","Locked amount check"],
+      ["w8Ok","Tax form (W-8/W-9)"]
+    ];
+    opsChecks.forEach(function(ch){if(c[ch[0]]===false)opsMissing.push(ch[1]);});
+  }
+
+  var latestMsg="Request is being processed.";
+  if(c.status==="Pending Ops"&&opsMissing.length){
+    latestMsg="Under OPS review. Missing items: "+opsMissing.join(", ")+".";
+  }else if(c.status==="Pending Ops"||c.status==="Pending AML"){
+    latestMsg="Under review by the operations/compliance team.";
+  }else if(c.notes&&c.notes.length){
+    latestMsg=c.notes[c.notes.length-1].text;
+  }
+
+  var latestDate=(c.notes&&c.notes.length)?c.notes[c.notes.length-1].date:(c.submittedDate||"");
+
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F9FAFB",fontFamily:"system-ui,sans-serif",padding:20}}>
       <div style={{maxWidth:620,width:"100%",background:"#fff",border:"1px solid #E5E7EB",borderRadius:14,padding:24}}>
@@ -4714,7 +4742,7 @@ function ClientTrackingPage(props){
 
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div style={{fontSize:13,fontWeight:700,color:"#374151"}}>Request {c.id}</div>
-          <span style={bs(c.status)}>{c.status}</span>
+          <span style={bs(c.status)}>{statusLabel}</span>
         </div>
 
         <div style={{height:10,background:"#F3F4F6",borderRadius:99,overflow:"hidden",marginBottom:7}}>
@@ -4724,8 +4752,8 @@ function ClientTrackingPage(props){
 
         <div style={{border:"1px solid #E5E7EB",borderRadius:10,padding:12,background:"#FAFAFA"}}>
           <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:6}}>Latest update</div>
-          <div style={{fontSize:12,color:"#374151"}}>{(c.notes&&c.notes.length)?c.notes[c.notes.length-1].text:"Request is being processed."}</div>
-          <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>{(c.notes&&c.notes.length)?c.notes[c.notes.length-1].date:(c.submittedDate||"")}</div>
+          <div style={{fontSize:12,color:"#374151"}}>{latestMsg}</div>
+          <div style={{fontSize:10,color:"#9CA3AF",marginTop:8}}>{latestDate}</div>
         </div>
       </div>
     </div>
