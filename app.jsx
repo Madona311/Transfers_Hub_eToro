@@ -232,8 +232,8 @@ var STAGE_ROLE = {
   "AML Review Pending":          "Requester"
 };
 var NEXT_ACTION = {
-  "Submitted":              {label:"Approve",                         next:"Pending AML"},
-  "Pending Ops":            {label:"Ops approve",                     next:"Pending AML"},
+  "Submitted":              {label:"Approve",                         next:"Pending Risk"},
+  "Pending Ops":            {label:"Ops approve",                     next:"Pending Risk"},
   "Pending Risk":           {label:"Risk approve",                    next:"Pending AML"},
   "Pending AML":            {label:"AML approve",                     next:"Broker Outreach"},
   "Broker Outreach":        {label:"Broker confirmed",                next:"Execution Ready"},
@@ -1500,7 +1500,7 @@ function CaseDetail(props) {
   var isAMLStage=c.status==="Pending AML"&&user.role==="AML";
   var isOpsStage=(c.status==="Submitted"||c.status==="Pending Ops")&&user.role==="Operations";
   var isRiskStage=c.status==="Pending Risk"&&user.role==="Risk";
-  var advanceLabel=(isOpsStage&&c.riskTriggered)?"Approve & send to Risk":(action?action.label:"");
+  var advanceLabel=isOpsStage?"Approve & send to Risk":(action?action.label:"");
 
   // Use opsClub (Ops-verified) if set, otherwise fall back to submitted club value
   var effectiveClub=c.opsClub||c.club||"";
@@ -1613,18 +1613,7 @@ function CaseDetail(props) {
           </div>
         )}
 
-        {isOpsStage&&(
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
-            <div>
-              <div style={{fontSize:11,fontWeight:700,color:"#92400E"}}>Risk trigger check</div>
-              <div style={{fontSize:10,color:"#B45309"}}>If triggered, approval route will go to Risk before AML.</div>
-            </div>
-            <label style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:c.riskTriggered?"#B45309":"#6B7280",cursor:"pointer"}}>
-              <input type="checkbox" checked={!!c.riskTriggered} onChange={function(e){setCases(function(prev){return updateCase(prev,c.id,"riskTriggered",e.target.checked);});}}/>
-              {c.riskTriggered?"Risk triggered":"No risk trigger"}
-            </label>
-          </div>
-        )}
+
 
         <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6}}>
           {CHECKLIST.map(function(item){
@@ -2423,9 +2412,6 @@ function QueueTab(props) {
     var a=NEXT_ACTION[activeCase.status];
     if(!a)return;
     var nextStatus=a.next;
-    if((activeCase.status==="Submitted"||activeCase.status==="Pending Ops")&&activeCase.riskTriggered===true){
-      nextStatus="Pending Risk";
-    }
     var patch={status:nextStatus};
     if(activeCase.status==="Returned to Requester"||activeCase.status==="AML Review Pending"){
       var isAML=activeCase.status==="AML Review Pending";
@@ -2504,9 +2490,6 @@ function AllCasesTab(props) {
   function advance(){
     var a=NEXT_ACTION[active.status];if(!a)return;
     var nextStatus=a.next;
-    if((active.status==="Submitted"||active.status==="Pending Ops")&&active.riskTriggered===true){
-      nextStatus="Pending Risk";
-    }
     var patch={status:nextStatus};
     if(active.status==="Returned to Requester"||active.status==="AML Review Pending"){
       var isAML=active.status==="AML Review Pending";
@@ -5116,7 +5099,7 @@ function LoginScreen(props) {
               <div style={{fontSize:11,color:"#64748B",textAlign:"center",lineHeight:1.6}}>Team members authenticate with PIN. Other eToro emails enter with Requester access.</div>
               <div style={{borderTop:"1px solid #E2E8F0",paddingTop:12,fontSize:11,color:"#9CA3AF"}}>
                 <div style={{fontWeight:700,marginBottom:6,color:"#475569"}}>Quick login (demo):</div>
-                {[["omar.p@etoro.com","Operations","1001"],["layla.m@etoro.com","AML","2001"],["chris.b@etoro.com","Middle Office","3001"],["james.h@etoro.com","Trading","4001"],["madonama@etoro.com","Admin","0000"]].map(function(u) {
+                {[["omar.p@etoro.com","Operations","1001"],["layla.m@etoro.com","AML","2001"],["rachel.r@etoro.com","Risk","2501"],["chris.b@etoro.com","Middle Office","3001"],["james.h@etoro.com","Trading","4001"],["madonama@etoro.com","Admin","0000"]].map(function(u) {
                   return (
                     <div key={u[0]} onClick={function(){setEmail(u[0]);}} style={{display:"flex",justifyContent:"space-between",padding:"4px 7px",borderRadius:7,cursor:"pointer",marginBottom:3,background:"#F8FAFC",border:"1px solid #E2E8F0"}}>
                       <span style={{color:"#334155"}}>{u[0]}</span>
