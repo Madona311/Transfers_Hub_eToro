@@ -3817,18 +3817,27 @@ function ExecMODates(props) {
 
 function ExecOpsLoad(props) {
   var p=props;
+  
+  // Filter to only show cases with execution date today or earlier
+  var today=new Date().toISOString().split('T')[0];
+  var loadableExecReady=p.execReady.filter(function(c){
+    var caseDate=p.savedDates&&p.savedDates[c.cid]?p.savedDates[c.cid]:c.executionDate;
+    if(!caseDate)return true; // Show if no date set
+    return caseDate<=today; // Only show if date is today or earlier
+  });
+  
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {p.execReady.length>0&&(
+      {loadableExecReady.length>0&&(
         <div style={{border:"1px solid #BFDBFE",borderRadius:10,padding:"10px 14px",background:"#EFF6FF"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#1E40AF",marginBottom:6}}>CIDs ready for Databricks query</div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            <div style={{fontFamily:"monospace",fontSize:12,color:"#1E40AF",background:"#fff",border:"1px solid #BFDBFE",borderRadius:6,padding:"5px 10px",flex:1}}>{p.execReady.map(function(c){return c.cid;}).join(", ")}</div>
-            <button onClick={function(){navigator.clipboard&&navigator.clipboard.writeText(p.execReady.map(function(c){return c.cid;}).join(","));p.setCopied(true);setTimeout(function(){p.setCopied(false);},2000);}} style={{background:"#2563EB",color:"#fff",border:"none",borderRadius:7,padding:"6px 13px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>{p.copied?"Copied!":"Copy CIDs"}</button>
+            <div style={{fontFamily:"monospace",fontSize:12,color:"#1E40AF",background:"#fff",border:"1px solid #BFDBFE",borderRadius:6,padding:"5px 10px",flex:1}}>{loadableExecReady.map(function(c){return c.cid;}).join(", ")}</div>
+            <button onClick={function(){navigator.clipboard&&navigator.clipboard.writeText(loadableExecReady.map(function(c){return c.cid;}).join(","));p.setCopied(true);setTimeout(function(){p.setCopied(false);},2000);}} style={{background:"#2563EB",color:"#fff",border:"none",borderRadius:7,padding:"6px 13px",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>{p.copied?"Copied!":"Copy CIDs"}</button>
           </div>
         </div>
       )}
-      {p.execReady.length>0&&(
+      {loadableExecReady.length>0&&(
         <div style={{border:"1px solid #C7D2FE",borderRadius:10,padding:"10px 14px",background:"#EEF2FF"}}>
           <div style={{fontSize:12,fontWeight:700,color:"#3730A3",marginBottom:6}}>Paste all positions once (auto-distribute by CID)</div>
           <div style={{fontSize:10,color:"#6B7280",fontFamily:"monospace",background:"#fff",borderRadius:5,padding:"6px 9px",lineHeight:1.8,border:"1px solid #C7D2FE",marginBottom:8}}>
@@ -3843,7 +3852,8 @@ function ExecOpsLoad(props) {
         </div>
       )}
       {p.execReady.length===0&&<div style={{border:"1px dashed #E5E7EB",borderRadius:12,padding:36,textAlign:"center",color:"#9CA3AF"}}>No cases in execution queue yet</div>}
-      {p.execReady.map(function(c) {
+      {loadableExecReady.length===0&&p.execReady.length>0&&<div style={{border:"1px solid #FCD34D",background:"#FFFBEB",borderRadius:12,padding:18,textAlign:"center",color:"#92400E",fontSize:12,fontWeight:600}}>⏳ You have {p.execReady.length} case{p.execReady.length!==1?"s":""} waiting for their execution date</div>}
+      {loadableExecReady.map(function(c) {
         var confirmed=p.opsConfirmed[c.id]; var pr=p.opsRows[c.id]||[]; var sa=SEED_ASSETS[c.id]||[]; var dateSet=p.savedDates&&p.savedDates[c.cid]?p.savedDates[c.cid]:c.executionDate; var hasDate=!!dateSet;
         return (
           <div key={c.id} style={{border:"2px solid "+(hasDate?"#86EFAC":confirmed?"#86EFAC":"#E5E7EB"),borderRadius:12,background:"#fff",overflow:"hidden"}}>
