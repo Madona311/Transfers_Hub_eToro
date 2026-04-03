@@ -3844,13 +3844,13 @@ function ExecOpsLoad(props) {
       )}
       {p.execReady.length===0&&<div style={{border:"1px dashed #E5E7EB",borderRadius:12,padding:36,textAlign:"center",color:"#9CA3AF"}}>No cases in execution queue yet</div>}
       {p.execReady.map(function(c) {
-        var confirmed=p.opsConfirmed[c.id]; var pr=p.opsRows[c.id]||[]; var sa=SEED_ASSETS[c.id]||[];
+        var confirmed=p.opsConfirmed[c.id]; var pr=p.opsRows[c.id]||[]; var sa=SEED_ASSETS[c.id]||[]; var dateSet=p.savedDates&&p.savedDates[c.cid]?p.savedDates[c.cid]:c.executionDate; var hasDate=!!dateSet;
         return (
-          <div key={c.id} style={{border:"2px solid "+(confirmed?"#86EFAC":"#E5E7EB"),borderRadius:12,background:"#fff",overflow:"hidden"}}>
-            <div style={{background:confirmed?"#F0FDF4":"#F8FAFF",padding:"11px 14px",borderBottom:"1px solid #E5E7EB"}}>
+          <div key={c.id} style={{border:"2px solid "+(hasDate?"#86EFAC":confirmed?"#86EFAC":"#E5E7EB"),borderRadius:12,background:"#fff",overflow:"hidden"}}>
+            <div style={{background:hasDate?"#F0FDF4":confirmed?"#F0FDF4":"#F8FAFF",padding:"11px 14px",borderBottom:"1px solid #E5E7EB"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
-                  <div style={{fontSize:10,color:"#9CA3AF"}}>{c.id} - {c.executionDate||"Date TBC"}</div>
+                  <div style={{fontSize:10,color:hasDate?"#166534":"#9CA3AF",fontWeight:hasDate?700:400}}>{c.id} - {dateSet||"Date TBC"}</div>
                   <div style={{fontSize:13,fontWeight:700}}>{c.clientName} <span style={{fontFamily:"monospace",color:"#6366F1",fontSize:12}}>CID: {c.cid}</span></div>
                 </div>
                 {confirmed&&<span style={{background:"#DCFCE7",color:"#166534",borderRadius:99,padding:"3px 11px",fontSize:11,fontWeight:700}}>Sent to MO for approval</span>}
@@ -4246,6 +4246,17 @@ function ExecutionTab(props) {
   var [usdError,setUsdError]=useState("");
   var [usdFinalized,setUsdFinalized]=useState(false);
 
+  // Restore saved dates from case data on component mount or when cases change
+  useEffect(function(){
+    var newDates={};
+    cases.forEach(function(c){
+      if(c.executionDate&&c.cid){
+        newDates[c.cid]=c.executionDate;
+      }
+    });
+    setSavedDates(newDates);
+  },[cases]);
+
   var execReady=cases.filter(function(c){return ["Execution Ready","Executing"].includes(c.status);});
   var brokerConfirmed=cases.filter(function(c){return ["Broker Outreach","Execution Ready","Executing"].includes(c.status);});
 
@@ -4463,7 +4474,7 @@ function ExecutionTab(props) {
         })}
       </div>
       {view==="mo"&&<ExecMODates brokerConfirmed={brokerConfirmed} savedDates={savedDates} setSavedDates={setSavedDates} transferDates={transferDates} setTransferDates={setTransferDates} saveDate={saveDate} byDate={byDate} copied={copied} setCopied={setCopied}/>}
-      {view==="ops"&&<ExecOpsLoad execReady={execReady} cases={cases} setCases={setCases} opsRows={opsRows} opsConfirmed={opsConfirmed} opsExcluded={opsExcluded} opsBulkPaste={opsBulkPaste} setOpsBulkPaste={setOpsBulkPaste} parseOpsBulkPaste={parseOpsBulkPaste} opsParseInfo={opsParseInfo} confirmOps={confirmOps} copied={copied} setCopied={setCopied}/>}
+      {view==="ops"&&<ExecOpsLoad execReady={execReady} cases={cases} setCases={setCases} savedDates={savedDates} opsRows={opsRows} opsConfirmed={opsConfirmed} opsExcluded={opsExcluded} opsBulkPaste={opsBulkPaste} setOpsBulkPaste={setOpsBulkPaste} parseOpsBulkPaste={parseOpsBulkPaste} opsParseInfo={opsParseInfo} confirmOps={confirmOps} copied={copied} setCopied={setCopied}/>}
       {view==="mo-approve"&&<ExecMOApprove cases={cases} setCases={setCases} approveAllMO={approveAllMO}/>}
       {view==="trading"&&<ExecTrading cases={cases} setCases={setCases} usdPaste={usdPaste} setUsdPaste={setUsdPaste} usdError={usdError} setUsdError={setUsdError} usdFinalized={usdFinalized} setUsdFinalized={setUsdFinalized} applyUSDPaste={applyUSDPaste}/>}
       {view==="bo"&&<ExecBOStatus cases={cases} setCases={setCases}/>}
